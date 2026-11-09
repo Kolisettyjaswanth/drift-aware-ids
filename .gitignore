@@ -1,0 +1,44 @@
+# Local environment and secrets
+.venv/
+venv/
+.env
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Notebook state
+.ipynb_checkpoints/
+
+# Large source and derived datasets (retain directory placeholders)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Generated model artifacts (retain directory placeholder)
+models/*
+!models/.gitkeep
+*.pkl
+*.joblib
+*.onnx
+
+# Streaming state and checkpoints
+checkpoints/
+checkpoint/
+spark-checkpoints/
+streaming-checkpoints/
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+build/
+
+# Local IDE, OS, and temporary files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tmp
+*.log

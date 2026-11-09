@@ -1,0 +1,5 @@
+[project]
+name = "drift-aware-ids"
+version = "0.1.0"
+description = "Research scaffold for a drift-aware real-time intrusion detection system"
+requires-python = ">=3.11,<3.12"
