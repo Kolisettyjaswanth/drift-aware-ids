@@ -8,6 +8,10 @@
 - Assistant review: no blocking issue for the scoped offline increment; rerun
   produced 26 passed and one unavailable-data skip. See
   [review and evidence](controlled_real_validation.md).
-- PR #1 remains draft and unmerged pending user decision.
-- Not started: Kafka, Spark, evasion evaluation, backend/database, frontend,
-  container integration. Deployment and temporal validation remain future work.
+- Drift PR #1 merged into master at `2549b68` (verified from GitHub).
+- Phase 1 Kafka transport implemented on `feat/kafka-integration`: single-broker
+  Compose, bounded CSV replay, JSON schema, verification consumer and automated
+  tests. Docker/broker and CIC-IDS2017 replay are pending user validation; see
+  [Kafka transport](kafka_transport.md).
+- Not started: Spark, evasion evaluation, backend/database and frontend.
+  Deployment and temporal validation remain future work.

@@ -1,6 +1,7 @@
 # Planned Architecture
 
-**Status:** This describes the intended architecture; it is not implemented.
+**Status:** Deployment architecture is planned. Offline research modules and
+Phase 1 Kafka transport code exist; broker integration awaits user validation.
 
 ## Planned data flow
 
@@ -35,3 +36,13 @@ The deployment flow remains planned. Offline preprocessing, scikit-learn model
 evaluation and KS drift experiments are implemented. Streaming, API, database
 and dashboard integrations remain unimplemented. See drift_validation.md.
 
+
+## Phase 1 transport milestone
+
+CSV -> Python replay (`src/producer/replay.py`) -> single-node KRaft Kafka
+(`docker/compose.kafka.yml`) -> Python verifier
+(`src/producer/verify_consumer.py`). Implemented, pending user Docker and
+real-data validation. The verifier is a transport acceptance tool, not a
+replacement for future Spark processing. Feature names are preserved inside a
+versioned JSON envelope; label/source metadata stay outside features. See
+[kafka_transport.md](kafka_transport.md) for schema, limits and configuration.

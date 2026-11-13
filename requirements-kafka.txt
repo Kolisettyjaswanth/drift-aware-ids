@@ -1,0 +1,2 @@
+# Optional transport client, separate from unchanged ML requirements.
+confluent-kafka==2.6.1
