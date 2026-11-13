@@ -31,5 +31,7 @@ PostgreSQL store for the dashboard.
 - **Preprocessing and training (`src/preprocessing/`, `src/training/`):**
   planned preparation of CIC-IDS2017 data and baseline model work.
 
-All components and data flows above are plans. No pipeline, model, API, database
-integration, or dashboard has been implemented.
+The deployment flow remains planned. Offline preprocessing, scikit-learn model
+evaluation and KS drift experiments are implemented. Streaming, API, database
+and dashboard integrations remain unimplemented. See drift_validation.md.
+

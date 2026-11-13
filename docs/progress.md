@@ -1,15 +1,9 @@
-# Project Progress
+# Progress
 
-- [ ] Environment setup
-- [x] Project scaffolding
-- [ ] Dataset exploration
-- [ ] Preprocessing
-- [ ] Baseline ML model
-- [ ] Kafka producer
-- [ ] Spark streaming integration
-- [ ] Evasion robustness experiments
-- [ ] Data drift monitoring
-- [ ] Backend and database
-- [ ] Frontend dashboard
-- [ ] Docker integration
-- [ ] Testing and documentation
+- Implemented: dataset preparation/audit, development Random Forest, held-out
+  capture evaluation, KS research experiments.
+- Verified in this increment: synthetic drift acceptance and automated tests;
+  see [validation](drift_validation.md).
+- Pending: real CIC-IDS2017 drift gate and original correlation reproduction.
+- Not started: Kafka, Spark, evasion evaluation, backend/database, frontend,
+  container integration. Do not advance streaming before the real-data gate.

@@ -58,10 +58,11 @@ These are planned technologies, not installed or configured dependencies.
 
 ## Current status
 
-**Environment setup and project scaffolding.** The folder structure and
-placeholder documentation are in place. Dataset exploration, preprocessing,
-models, streaming, drift monitoring, robustness experiments, APIs, database,
-dashboard, and container configuration are all planned and not implemented.
+Offline preprocessing, scikit-learn Random Forest, held-out evaluation and KS
+experiments are implemented. Controlled synthetic validation is implemented;
+real-data drift acceptance remains pending. Kafka, Spark, API, database,
+dashboard and evasion evaluation remain unimplemented.
 
-See [`docs/progress.md`](docs/progress.md) for phase tracking and
-[`docs/setup.md`](docs/setup.md) for the current setup notes.
+See [drift validation](docs/drift_validation.md) for commands, actual results,
+limitations and file-by-file changes. Earlier "planned" descriptions above
+refer to the deployment architecture, not the existing offline experiments.

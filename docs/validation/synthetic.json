@@ -1,0 +1,102 @@
+{
+  "passed": true,
+  "seeds": [
+    {
+      "seed": 0,
+      "windows": 40,
+      "alerts": {
+        "no_shift": 0,
+        "location_shift": 40,
+        "scale_shift": 40
+      }
+    },
+    {
+      "seed": 1,
+      "windows": 40,
+      "alerts": {
+        "no_shift": 0,
+        "location_shift": 40,
+        "scale_shift": 40
+      }
+    },
+    {
+      "seed": 2,
+      "windows": 40,
+      "alerts": {
+        "no_shift": 0,
+        "location_shift": 40,
+        "scale_shift": 40
+      }
+    },
+    {
+      "seed": 3,
+      "windows": 40,
+      "alerts": {
+        "no_shift": 0,
+        "location_shift": 40,
+        "scale_shift": 40
+      }
+    },
+    {
+      "seed": 4,
+      "windows": 40,
+      "alerts": {
+        "no_shift": 0,
+        "location_shift": 40,
+        "scale_shift": 40
+      }
+    }
+  ],
+  "summary": {
+    "no_shift": {
+      "alerts": 0,
+      "windows": 200,
+      "rate": 0.0,
+      "wilson_95": [
+        1.734723475976807e-18,
+        0.018845326377266575
+      ]
+    },
+    "location_shift": {
+      "alerts": 200,
+      "windows": 200,
+      "rate": 1.0,
+      "wilson_95": [
+        0.9811546736227335,
+        1.0
+      ]
+    },
+    "scale_shift": {
+      "alerts": 200,
+      "windows": 200,
+      "rate": 1.0,
+      "wilson_95": [
+        0.9811546736227335,
+        1.0
+      ]
+    }
+  },
+  "settings": {
+    "reference_size": 10000,
+    "window_size": 1000,
+    "alpha": 0.05,
+    "min_ks": 0.1,
+    "minimum_features": 2,
+    "shifted_features": [
+      "Average Packet Size",
+      "Bwd Packet Length Std"
+    ]
+  },
+  "input_sha256": "f4347bc37962c4d5c1b2e4c0d48d97e84ef27a255250f27664c443a0b821070d",
+  "versions": {
+    "python": "3.12.14",
+    "numpy": "2.3.5",
+    "pandas": "2.2.3",
+    "scipy": "1.17.0"
+  },
+  "limitations": [
+    "IID synthetic Gaussian validation only",
+    "Wilson intervals are descriptive: windows share references",
+    "Does not validate CIC-IDS2017 or deployment performance"
+  ]
+}
