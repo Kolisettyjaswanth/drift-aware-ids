@@ -97,3 +97,10 @@ success alone does not authorize Kafka/Spark advancement.
 - `docs/validation/synthetic.json`: generated evidence from the executed runner.
 - README, architecture, progress, setup, experiments and tests documentation:
   distinguish implemented offline code from pending real-time services.
+
+## Controlled real-data runner added
+
+The remaining same-capture gate is implemented in `src/drift/validate_real.py`.
+See [protocol and WSL commands](controlled_real_validation.md). Real-data
+acceptance is pending actual execution; user-reported prior local checks are
+recorded separately from development-environment tests.
