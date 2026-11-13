@@ -61,8 +61,11 @@ These are planned technologies, not installed or configured dependencies.
 Offline preprocessing, scikit-learn Random Forest, held-out evaluation and KS
 experiments and controlled validators are implemented. The user reports the
 controlled CIC-IDS2017 gate passed at `6ba34e5`; see
-[attributed results and review](docs/controlled_real_validation.md). Kafka, Spark, API, database,
-dashboard and evasion evaluation remain unimplemented.
+[attributed results and review](docs/controlled_real_validation.md). Phase 1 Kafka
+transport is implemented for local validation; see
+[Kafka transport](docs/kafka_transport.md). Broker/Docker and CIC-IDS2017 replay
+verification remain pending user execution. Spark, API, database, dashboard and
+evasion evaluation remain unimplemented.
 
 See [drift validation](docs/drift_validation.md) for commands, actual results,
 limitations and file-by-file changes. Earlier "planned" descriptions above
