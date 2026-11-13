@@ -81,20 +81,64 @@ features can resist multiplicative shifts; actual failures must be reported.
 
 ## Verification status
 
-The user reports Python 3.11.18, prior 18/18 tests, prior synthetic acceptance,
-286 real-data windows, raw correlation 0.9945655976175768 and adjusted correlation
-0.10210084333683445. These are user-reported local results, not this gate's results.
+User-executed local results, reported for commit `6ba34e5` on
+`feat/drift-validation`, Python 3.11.18:
 
-In the development environment: 27 tests discovered, 26 passed, one existing
-CIC-IDS2017 prediction/reference smoke test skipped for unavailable files.
-New tests cover sample separation, deterministic sampling, pairing, no mutation,
-loader filtering/provenance, fixed settings, strong shifts on fixtures, aggregate
-failure and exact acceptance boundaries. CLI help and compilation were checked.
-A full-size 50,000-row generated uniform fixture exercised the CLI: 0/200
-unchanged, 200/200 location and 200/200 scale alerts, exit 0. Fixture success is
-not CIC-IDS2017 acceptance. Attempting the real Monday path failed with
-FileNotFoundError because the CSV is absent. Real CIC-IDS2017 acceptance remains pending execution
-of the command above. No Kafka/Spark work or master merge is authorized here.
+| Check | Reported result |
+|---|---|
+| Automated tests | 27 passed, 0 failed, 0 skipped |
+| Controlled real-data gate | passed |
+| Unchanged | 0/200 alerts |
+| Location shift | 200/200 alerts |
+| Scale shift | 200/200 alerts |
+
+These reported rates satisfy the predefined acceptance thresholds. The assistant
+has not independently run CIC-IDS2017 or inspected the local JSON report; no
+local dataset fingerprint, dependency versions beyond the reported Python, or
+per-seed records are asserted here. Retain the original generated JSON report
+and raw input locally for provenance and replay.
+
+Separately, assistant-executed checks at review: 27 tests discovered, 26 passed,
+one existing CIC-IDS2017 prediction/reference smoke test skipped because those
+inputs are unavailable; compilation succeeded. Runtime: Python 3.12.14 with
+NumPy 2.3.5, pandas 2.2.3, SciPy 1.17.0. Earlier assistant-executed full-size
+uniform fixture CLI produced 0/200 unchanged and 200/200 each shift; that fixture
+is not real-data evidence.
+
+Earlier user-reported analysis: 286 real-data windows, raw correlation
+0.9945655976175768 and adjusted correlation 0.10210084333683445. These are separate
+from the paired benign gate and remain descriptive rather than causal evidence.
+
+## Final review of code at 6ba34e5
+
+No blocking issue found for merging this bounded offline drift-validation
+increment, based on code review plus the explicitly attributed local results.
+Reference/evaluation identities are disjoint within each seed; reference-only
+location parameters avoid evaluation-driven tuning; paired copies preserve
+labels, row identities and non-target features. Every new gate scenario uses
+the same strict detector and thresholds. Correlation adjustment uses OLS
+residuals with an intercept. The PR changes only drift code, tests and related
+documentation; no Kafka/Spark or application changes were found.
+
+Nonblocking limitations/follow-ups:
+
+- Average Packet Size and Packet Length Mean are related, so the two-feature
+  rule is not independent evidence. This is a controlled sensitivity test.
+- Duplicate feature vectors can occur across disjoint identities. Shared
+  references and overlapping seeds prevent treating 200 windows as independent.
+- Historical one-feature/two-feature and auto/asymp rules remain intentional;
+  compare only like-for-like reports. The new strict gate uses two features.
+- Synthetic input fingerprint covers evaluation windows, not reference arrays;
+  fixed seeds/versions reproduce the references. The real validator fingerprints
+  both reference and evaluation inputs.
+- Direct execution of tests/test_drift.py reaches unittest.main before the final
+  test class; use the documented unittest discovery command to include all tests.
+- Same-capture benign validation does not establish deployment accuracy, unseen
+  attack detection, temporal drift detection or causal drift/error dependence.
+
+Recommendation: ready for user review and merge as the scoped offline
+validation increment; not a claim that the entire real-time IDS is complete.
+The PR remains draft and unmerged. No Kafka/Spark implementation was begun.
 
 ## Files in this increment
 

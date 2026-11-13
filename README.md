@@ -59,8 +59,9 @@ These are planned technologies, not installed or configured dependencies.
 ## Current status
 
 Offline preprocessing, scikit-learn Random Forest, held-out evaluation and KS
-experiments are implemented. Controlled synthetic validation is implemented;
-real-data drift acceptance remains pending. Kafka, Spark, API, database,
+experiments and controlled validators are implemented. The user reports the
+controlled CIC-IDS2017 gate passed at `6ba34e5`; see
+[attributed results and review](docs/controlled_real_validation.md). Kafka, Spark, API, database,
 dashboard and evasion evaluation remain unimplemented.
 
 See [drift validation](docs/drift_validation.md) for commands, actual results,

@@ -67,7 +67,7 @@ Executed with Python 3.12.14, NumPy 2.3.5, pandas 2.2.3, SciPy 1.17.0.
 The repository declares Python 3.11 and different exact pins: that environment
 has not been verified here. No dependency pins were changed.
 
-## Remaining real-data gate — NOT COMPLETE
+## Initial assistant execution limits (historical)
 
 The dataset smoke test skips explicitly when reference.csv or
 heldout_portscan_predictions.csv is missing. Raw/processed CIC-IDS2017, trained
@@ -77,7 +77,7 @@ shift validation at fixed attack fraction, all historical capture experiments,
 held-out model retraining, and reproduction of the observed raw/adjusted
 correlations. These are unavailable checks, not passes.
 
-Before completing the drift phase, run those checks with input fingerprints,
+At that point, remaining checks required input fingerprints,
 record counts, capture separation, locked thresholds and results. Synthetic
 success alone does not authorize Kafka/Spark advancement.
 
@@ -101,6 +101,7 @@ success alone does not authorize Kafka/Spark advancement.
 ## Controlled real-data runner added
 
 The remaining same-capture gate is implemented in `src/drift/validate_real.py`.
-See [protocol and WSL commands](controlled_real_validation.md). Real-data
-acceptance is pending actual execution; user-reported prior local checks are
-recorded separately from development-environment tests.
+See [protocol and WSL commands](controlled_real_validation.md). The user now reports real-data acceptance passed at `6ba34e5`: 0/200 unchanged
+and 200/200 for each shift, with 27/27 local tests on Python 3.11.18. These are
+user-executed results, not independent assistant execution. See the linked
+protocol for final review findings and evidence attribution.
