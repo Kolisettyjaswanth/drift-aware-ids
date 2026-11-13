@@ -1,0 +1,217 @@
+"""Bounded local Kafka -> Spark schema-v1 transport acceptance."""
+import argparse
+import json
+import math
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import uuid
+
+from src.streaming.validation import (SPARK_VERSION, CONNECTOR, source_options,
+                                     validate_record, read_records, summarize)
+
+
+def write_json(path, value):
+    path = Path(path)
+    temp = path.with_suffix('.tmp')
+    temp.write_text(json.dumps(value, indent=2, allow_nan=False)+'\n', encoding='utf-8')
+    temp.replace(path)
+
+
+class BatchSink:
+    """Atomic batch-ID files prevent foreachBatch retries inflating final counts.
+
+    Not a resumable production sink. Every CLI invocation reserves a new run dir.
+    """
+    def __init__(self, run_dir, max_records):
+        self.directory = Path(run_dir)/'batches'
+        self.directory.mkdir()
+        self.max_records = max_records
+        self.sizes = {}
+
+    def __call__(self, frame, batch_id):
+        path = self.directory/f'batch-{batch_id:020d}.jsonl'
+        temp = path.with_suffix('.tmp')
+        count = 0
+        previous = sum(n for batch,n in self.sizes.items() if batch != batch_id)
+        try:
+            with temp.open('w', encoding='utf-8') as stream:
+                for row in frame.toLocalIterator(prefetchPartitions=False):
+                    count += 1
+                    if previous+count > self.max_records:
+                        raise ValueError('Input safety cap exceeded; batch accounting incomplete')
+                    record = validate_record(row)
+                    stream.write(json.dumps(record, allow_nan=False)+'\n')
+            temp.replace(path)
+            self.sizes[batch_id] = count
+        finally:
+            temp.unlink(missing_ok=True)
+
+
+def execute_query(spark, config):
+    query = None
+    try:
+        options = source_options(config['brokers'], config['topic'], config['batch_size'])
+        frame = spark.readStream.format('kafka').options(**options).load()
+        sink = BatchSink(config['run_dir'], config['max_records'])
+        query = (frame.select('key','value','topic','partition','offset')
+                 .writeStream.foreachBatch(sink)
+                 .option('checkpointLocation', str(Path(config['run_dir'])/'checkpoint'))
+                 .trigger(availableNow=True).start())
+        query.awaitTermination() # parent enforces wall-clock timeout, including startup
+    finally:
+        if query is not None and query.isActive:
+            query.stop()
+
+
+def worker(config):
+    spark = None
+    report = {'success': False, 'accounting_complete': False, 'errors': []}
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt('Termination requested')
+    old_handler = signal.signal(signal.SIGTERM, interrupted)
+    try:
+        import pyspark
+        if pyspark.__version__ != SPARK_VERSION:
+            raise ValueError(f'Expected PySpark {SPARK_VERSION}, got {pyspark.__version__}')
+        from pyspark.sql import SparkSession
+        spark = (SparkSession.builder.master('local[2]').appName('ids-kafka-acceptance')
+                 .config('spark.jars.packages', CONNECTOR)
+                 .config('spark.sql.shuffle.partitions','2')
+                 .config('spark.default.parallelism','2')
+                 .config('spark.ui.enabled','false')
+                 .config('spark.sql.streaming.stopTimeout','10000')
+                 .config('spark.driver.maxResultSize','64m')
+                 .getOrCreate())
+        if spark.version != SPARK_VERSION:
+            raise ValueError(f'Unexpected JVM Spark version {spark.version}')
+        scala = spark.sparkContext._jvm.scala.util.Properties.versionNumberString()
+        if not scala.startswith('2.12.'):
+            raise ValueError(f'Connector requires Scala 2.12, got {scala}')
+        # Resolving the actual provider verifies the connector classpath at runtime.
+        spark.sparkContext._jvm.java.lang.Class.forName(
+            'org.apache.spark.sql.kafka010.KafkaSourceProvider', True,
+            spark.sparkContext._jvm.java.lang.Thread.currentThread().getContextClassLoader())
+        spark.sparkContext.setLogLevel('WARN')
+        execute_query(spark, config)
+        report.update(summarize(read_records(config['run_dir']),config['replay_id'],
+                                config['expected_count'],config['topic'],config['max_records']))
+        report.update(accounting_complete=True, spark_version=spark.version, scala_version=scala)
+    except (Exception, KeyboardInterrupt) as exc:
+        report['success'] = False
+        report['errors'].append(str(exc)[:2000] or type(exc).__name__)
+    finally:
+        if spark is not None:
+            try:
+                spark.stop()
+            except Exception as exc:
+                report['success'] = False
+                report['errors'].append('Spark cleanup failed: '+str(exc)[:500])
+    if not report['accounting_complete']:
+        try:
+            report.update(summarize(read_records(config['run_dir']), config['replay_id'],
+                                    config['expected_count'], config['topic'], config['max_records']))
+        except Exception as exc:
+            report['errors'].append('Partial accounting failed: '+str(exc)[:500])
+        report['success'] = False
+    signal.signal(signal.SIGTERM, old_handler)
+    report.update(replay_id=config['replay_id'], expected_count=config['expected_count'],
+                  topic=config['topic'], connector=CONNECTOR,
+                  counts_scope='completed batch files only; incomplete on runtime failure')
+    write_json(Path(config['run_dir'])/'summary.json', report)
+    return 0 if report['success'] else 1
+
+
+def terminate_group(process):
+    """Linux/WSL process group includes Python, Spark JVM and workers."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+    finally:
+        # Kill lingering children even if the Python worker exited first.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def supervise(config, timeout):
+    run_dir = Path(config['run_dir'])
+    run_dir.mkdir(parents=True, exist_ok=False) # never reuse checkpoint or overwrite a run
+    write_json(run_dir/'config.json',config)
+    env = os.environ.copy()
+    env['PYSPARK_SUBMIT_ARGS'] = '--driver-memory 1g pyspark-shell'
+    env['PYSPARK_PYTHON'] = sys.executable
+    process = None
+    failure = None
+    try:
+        process = subprocess.Popen([sys.executable,'-m','src.streaming.spark_consumer',
+                                    '--worker-config',str(run_dir/'config.json')],
+                                   env=env, start_new_session=True)
+        code = process.wait(timeout=timeout)
+        if code:
+            failure = f'Spark worker exited {code}'
+    except subprocess.TimeoutExpired:
+        failure = f'Wall-clock timeout after {timeout}s'
+    except KeyboardInterrupt:
+        failure = 'Interrupted by user'
+    except Exception as exc:
+        failure = str(exc)
+    finally:
+        if process is not None:
+            terminate_group(process)
+    path = run_dir/'summary.json'
+    report = json.loads(path.read_text()) if path.exists() else {
+        'success': False, 'accounting_complete': False, 'errors': []}
+    if not path.exists():
+        report.update(summarize(read_records(run_dir), config['replay_id'],
+                                config['expected_count'], config['topic'], config['max_records']))
+        report.update(success=False, accounting_complete=False,
+                      counts_scope='completed batch files only; runtime did not finish')
+    if failure:
+        report['success'] = False
+        report.setdefault('errors',[]).append(failure)
+    report['run_dir'] = str(run_dir)
+    write_json(path,report)
+    return report
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--worker-config', help=argparse.SUPPRESS)
+    p.add_argument('--brokers',default='127.0.0.1:9092')
+    p.add_argument('--topic')
+    p.add_argument('--replay-id')
+    p.add_argument('--expected-count',type=int,default=100)
+    p.add_argument('--max-records',type=int,default=1000)
+    p.add_argument('--batch-size',type=int,default=100)
+    p.add_argument('--timeout',type=float,default=180.)
+    p.add_argument('--run-dir',default=None)
+    args = p.parse_args()
+    if args.worker_config:
+        return worker(json.loads(Path(args.worker_config).read_text()))
+    try:
+        source_options(args.brokers,args.topic,args.batch_size)
+        summarize([],args.replay_id,args.expected_count,args.topic,args.max_records)
+        if not math.isfinite(args.timeout) or args.timeout <= 0:
+            raise ValueError('Timeout must be finite and positive')
+        config = {k: getattr(args,k) for k in ('brokers','topic','replay_id','expected_count',
+                                              'max_records','batch_size')}
+        config['run_dir'] = str(Path(args.run_dir or
+            f'data/processed/spark/{uuid.uuid4()}').resolve())
+        report = supervise(config,args.timeout)
+    except Exception as exc:
+        report = {'success':False,'errors':[str(exc)]}
+    print(json.dumps(report,allow_nan=False))
+    return 0 if report['success'] else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

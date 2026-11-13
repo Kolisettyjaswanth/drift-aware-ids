@@ -1,7 +1,8 @@
 # Planned Architecture
 
 **Status:** Deployment architecture is planned. Offline research modules and
-Phase 1 Kafka transport code exist; broker integration awaits user validation.
+Phase 1 Kafka transport exist; user reports broker validation succeeded.
+Kafka-to-Spark local acceptance code awaits user runtime validation.
 
 ## Planned data flow
 
@@ -33,16 +34,26 @@ PostgreSQL store for the dashboard.
   planned preparation of CIC-IDS2017 data and baseline model work.
 
 The deployment flow remains planned. Offline preprocessing, scikit-learn model
-evaluation and KS drift experiments are implemented. Streaming, API, database
-and dashboard integrations remain unimplemented. See drift_validation.md.
+evaluation and KS drift experiments are implemented. Kafka transport is merged;
+Spark local acceptance code awaits runtime validation. API, database and
+dashboard integrations remain unimplemented. See drift_validation.md.
 
 
 ## Phase 1 transport milestone
 
 CSV -> Python replay (`src/producer/replay.py`) -> single-node KRaft Kafka
 (`docker/compose.kafka.yml`) -> Python verifier
-(`src/producer/verify_consumer.py`). Implemented, pending user Docker and
-real-data validation. The verifier is a transport acceptance tool, not a
+(`src/producer/verify_consumer.py`). Merged via PR #2; user reports Docker,
+100-event real-data transport and restart persistence succeeded. The verifier is a transport acceptance tool, not a
 replacement for future Spark processing. Feature names are preserved inside a
 versioned JSON envelope; label/source metadata stay outside features. See
 [kafka_transport.md](kafka_transport.md) for schema, limits and configuration.
+
+## Kafka-to-Spark acceptance milestone
+
+Existing schema-v1 events -> Spark 3.5.7 local[2] Kafka source -> bounded
+foreachBatch validation using the shared event validator -> local JSONL records
+and exact replay/offset statistics. Local[2] is a development consumer, not a
+new cluster. No ML scoring or drift calculation is introduced. See
+[spark_streaming.md](spark_streaming.md) for dependency matching, limitations,
+checkpoint isolation and pending WSL acceptance.

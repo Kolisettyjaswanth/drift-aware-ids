@@ -1,0 +1,3 @@
+# Optional local Structured Streaming runtime; Scala connector supplied by runner.
+pyspark==3.5.7
+py4j==0.10.9.7

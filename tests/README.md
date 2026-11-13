@@ -10,3 +10,8 @@ Kafka transport unit tests use fake clients and do not need a broker or the
 optional client package. `test_kafka_integration.py` is skipped unless explicitly
 enabled with IDS_KAFKA_INTEGRATION=1; it expects an already-running broker and
 requirements-kafka.txt installed. See docs/kafka_transport.md.
+
+Spark broker-independent tests require neither PySpark nor Kafka. The optional
+`tests.test_spark_live` suite requires IDS_SPARK_INTEGRATION=1 and an existing
+local broker/runtime. See docs/spark_streaming.md for the exact 100-real-record
+acceptance checkpoints and source-preservation comparison.
