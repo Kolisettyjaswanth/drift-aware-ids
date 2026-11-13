@@ -1,15 +1,10 @@
 # Setup
 
-This document tracks setup guidance for the planned Python 3.11 project.
-The repository currently contains scaffolding only.
+The project declares Python >=3.11,<3.12. Install requirements.txt in an isolated
+Python 3.11 environment. Exact pinned installation remains unverified in this
+increment; execution used the available Python 3.12 runtime. See
+[validation](drift_validation.md) for versions, test commands and limitations.
 
-## Current state
-
-- Use Python 3.11 for future project development.
-- `.env.example` lists placeholder configuration names; copy and fill it only
-  in a local, untracked `.env` file when services are introduced.
-- Dependencies have not been selected, installed, or pinned.
-- Kafka, Spark, PostgreSQL, the API, and the dashboard are not configured.
-
-Service-specific setup instructions will be added when those components are
-introduced and verified.
+Place CIC-IDS2017 in data/raw/cicids2017 and run existing preprocessing scripts
+before capture experiments. Large data and model files remain excluded from Git.
+Kafka/Spark and application services are not configured.

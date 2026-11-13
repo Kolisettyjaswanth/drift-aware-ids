@@ -2,7 +2,7 @@
 from pathlib import Path
 
 import pandas as pd
-from scipy.stats import ks_2samp
+from src.drift.ks import legacy_ks_2samp as ks_2samp, feature_alert
 
 
 DATA_DIR = Path("data/processed/drift")
@@ -58,8 +58,7 @@ def main():
                 statistics.append(statistic)
 
                 if (
-                    p_value < P_THRESHOLD
-                    and statistic >= KS_THRESHOLD
+                    feature_alert(statistic, p_value, alpha=P_THRESHOLD, min_ks=KS_THRESHOLD)
                 ):
                     drifted.append(feature)
 
@@ -91,3 +90,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

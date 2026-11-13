@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
-from scipy.stats import ks_2samp
+from src.drift.ks import legacy_ks_2samp as ks_2samp, feature_alert
 
 
 # --------------------------------------------------
@@ -87,8 +87,7 @@ def evaluate_capture(reference, capture_df):
             # Feature is considered drifted only
             # when both conditions are satisfied
             if (
-                p_value < P_THRESHOLD
-                and statistic >= KS_THRESHOLD
+                feature_alert(statistic, p_value, alpha=P_THRESHOLD, min_ks=KS_THRESHOLD)
             ):
                 drifted_features.append(feature)
 
@@ -233,3 +232,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

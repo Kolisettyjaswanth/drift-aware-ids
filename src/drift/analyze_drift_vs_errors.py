@@ -1,10 +1,11 @@
 
+from src.drift.correlation import correlations
 from pathlib import Path
 import json
 
 import numpy as np
 import pandas as pd
-from scipy.stats import ks_2samp
+from src.drift.ks import legacy_ks_2samp as ks_2samp, feature_alert
 
 
 # ==========================================
@@ -148,8 +149,7 @@ def main():
             )
 
             if (
-                p_value < P_THRESHOLD
-                and statistic >= KS_THRESHOLD
+                feature_alert(statistic, p_value, alpha=P_THRESHOLD, min_ks=KS_THRESHOLD)
             ):
                 drifted_features.append(
                     feature
@@ -297,6 +297,10 @@ def main():
             )
         ),
         "mean_ks_error_correlation": correlation,
+        "correlations": correlations(
+            results_df["mean_ks"], results_df["error_rate"],
+            results_df["attack_fraction"],
+        ),
     }
 
     report = {
@@ -409,3 +413,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

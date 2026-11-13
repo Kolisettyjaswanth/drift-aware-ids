@@ -4,7 +4,7 @@ import json
 
 import numpy as np
 import pandas as pd
-from scipy.stats import ks_2samp
+from src.drift.ks import legacy_ks_2samp as ks_2samp, feature_alert
 
 BASE = Path("data/raw/cicids2017/MachineLearningCVE")
 MONDAY = BASE / "Monday-WorkingHours.pcap_ISCX.csv"
@@ -72,8 +72,7 @@ def evaluate(reference, test, name):
             statistic, p_value = ks_2samp(a, b)
 
             if (
-                p_value < corrected_alpha
-                and statistic >= MIN_KS_STATISTIC
+                feature_alert(statistic, p_value, alpha=corrected_alpha, min_ks=MIN_KS_STATISTIC)
             ):
                 drifted.append(feature)
 
@@ -165,3 +164,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
