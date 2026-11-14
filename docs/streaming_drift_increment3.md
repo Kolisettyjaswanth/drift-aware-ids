@@ -243,3 +243,69 @@ preflight file-not-found paths returned nonzero; the latter wrote a failed summa
 without launching a child. Runtime is Work Python 3.12; local Python 3.11 and live
 integration still need user verification. No PR is created or merged at this
 checkpoint; statistical-performance validation remains separate.
+
+## Final WSL acceptance results (2026-11-14)
+
+These results supersede the earlier **Work-environment verification status**
+above as the current acceptance record; the original notes remain as historical
+implementation evidence. Acceptance was performed on the feature branch at
+commit `c6848de9e25fdc4e31d456d47d9657c9089185c6` before this documentation
+update. The feature was not merged into `master` during acceptance.
+
+### Offline regression
+
+- Python 3.11 WSL environment: **187 tests passed, 2 skipped**, no reported
+  failures or errors. The two skipped tests are opt-in integration tests; actual
+  Kafka/Spark runs were performed separately.
+- `git diff --check` passed before the final acceptance run.
+- Added regression coverage confirms sticky failure after unsuccessful terminal
+  finalization and after Kafka configured partition count changes during updates.
+
+### Live Kafka → Spark → Random Forest → KS acceptance
+
+- Kafka topic: `ids.drift.acceptance-20261114T062049-35486`; exactly **one
+  configured partition**.
+- Replay ID: `d6afcf7b-7327-4e13-b613-b713ccbedb06`.
+- Final run directory (local, not committed):
+  `data/processed/spark/drift-final-20261114T082022-75026`.
+- Final combined invocation enabled both `--enable-inference` and
+  `--enable-drift --drift-reference data/processed/drift/reference.csv`.
+  It exited **0**, with `success: true` and `accounting_complete: true`.
+- Transport: **1,000 consumed, 1,000 valid**, 0 invalid, 0 unrelated, 0
+  duplicates, 0 repeated offsets, 0 unexpected rows, and 0 missing expected.
+- Inference: `verified: true`; **1,000 predictions across 10 batches**.
+- Drift: `status: evaluated`, `success: true`,
+  `evaluation_complete: true`; **one evaluated 1,000-record window**.
+  The window reported `alert: true` for source capture
+  `Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv`. This is a
+  distribution-shift alert, **not proof of an intrusion**.
+- Reference SHA-256:
+  `2db894325651cb263656ffe3c506d670b9774e94af22cf7bd4007c03b8317358`;
+  matched the reference preflight and the final drift summary.
+- Evidence: **10 distinct readable JSON snapshot files**, including the
+  final snapshot, under the final run directory's `drift/evaluations/`.
+  Final snapshot ID:
+  `53e9685e31f7e86658c46834340ced2cb0f5ae436a024dc67afd510e0b37c4f8`.
+- Source-preservation verifier returned `success: true` and
+  `verified_source_rows: 1000`. It compares all schema-v1 fields **except
+  `replayed_at`**, which cannot be reconstructed from the source fixture.
+
+### Negative and compatibility acceptance
+
+Separate live runs confirmed rejection of an empty two-partition topic before
+Spark startup; a missing drift-reference flag; a nonexistent reference file
+before Spark startup; and a terminal incomplete 100-record window with
+`insufficient_data`, null alert and nonzero exit. The original transport-only
+mode also passed a live 1,000-record regression and source verification.
+
+### Scope and limitations
+
+This is a **bounded local acceptance test**, not a production-readiness
+assessment. Rebuilding and evaluating snapshots after committed micro-batches
+has not been performance-benchmarked at the 10,000-record safety ceiling.
+The final evidence check verified file presence, distinct paths, parseable
+JSON, and final snapshot membership; it was not an independent cryptographic
+audit of every evidence field. The deterministic detector parity check reused
+the existing KS implementation, not an independent statistical benchmark.
+No unseen-traffic detection-performance claim is made. Local evidence paths
+are not committed to GitHub; preserve them separately if needed for evaluation.
