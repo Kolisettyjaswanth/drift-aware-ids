@@ -20,6 +20,15 @@ def write_json(path, value):
     temp.replace(path)
 
 
+def merge_accounting(report, counts, *, partial=False):
+    protected = {'errors', 'drift', 'inference', 'accounting_complete'}
+    if partial:
+        protected.add('success')
+    report.update({key:value for key,value in counts.items() if key not in protected})
+    if report.get('errors'):
+        report['success'] = False
+
+
 class BatchSink:
     """Persist validated batches and optionally their model predictions.
 
@@ -27,12 +36,13 @@ class BatchSink:
     This is a bounded local sink, not a production transaction system.
     """
 
-    def __init__(self, run_dir, max_records, inference_engine=None):
+    def __init__(self, run_dir, max_records, inference_engine=None, drift_monitor=None):
         self.directory = Path(run_dir) / "batches"
         self.directory.mkdir()
         self.max_records = max_records
         self.sizes = {}
         self.inference_engine = inference_engine
+        self.drift_monitor = drift_monitor
 
         self.prediction_directory = None
         if inference_engine is not None:
@@ -107,6 +117,8 @@ class BatchSink:
 
             temp.replace(path)
             self.sizes[batch_id] = count
+            if self.drift_monitor is not None:
+                self.drift_monitor.update() # after transport/prediction commit; never delete evidence
 
         finally:
             temp.unlink(missing_ok=True)
@@ -115,7 +127,7 @@ class BatchSink:
                 prediction_temp.unlink(missing_ok=True)
 
 
-def execute_query(spark, config):
+def execute_query(spark, config, drift_monitor=None):
     query = None
     try:
         options = source_options(config['brokers'], config['topic'], config['batch_size'])
@@ -129,6 +141,7 @@ def execute_query(spark, config):
             config['run_dir'],
             config['max_records'],
             inference_engine=inference_engine,
+            drift_monitor=drift_monitor,
         )
         query = (frame.select('key','value','topic','partition','offset')
                  .writeStream.foreachBatch(sink)
@@ -142,11 +155,17 @@ def execute_query(spark, config):
 
 def worker(config):
     spark = None
+    drift_monitor = None
     report = {'success': False, 'accounting_complete': False, 'errors': []}
     def interrupted(signum, frame):
         raise KeyboardInterrupt('Termination requested')
     old_handler = signal.signal(signal.SIGTERM, interrupted)
     try:
+        if config.get('enable_drift', False):
+            from src.streaming.drift_monitor import bound_reference, require_single_partition, DriftMonitor
+            reference = bound_reference(config)
+            require_single_partition(config['brokers'], config['topic'])
+            drift_monitor = DriftMonitor(config, reference)
         import pyspark
         if pyspark.__version__ != SPARK_VERSION:
             raise ValueError(f'Expected PySpark {SPARK_VERSION}, got {pyspark.__version__}')
@@ -169,8 +188,11 @@ def worker(config):
             'org.apache.spark.sql.kafka010.KafkaSourceProvider', True,
             spark.sparkContext._jvm.java.lang.Thread.currentThread().getContextClassLoader())
         spark.sparkContext.setLogLevel('WARN')
-        execute_query(spark, config)
-        report.update(summarize(read_records(config['run_dir']),config['replay_id'],
+        if drift_monitor is None:
+            execute_query(spark, config)
+        else:
+            execute_query(spark, config, drift_monitor=drift_monitor)
+        merge_accounting(report, summarize(read_records(config['run_dir']),config['replay_id'],
                                 config['expected_count'],config['topic'],config['max_records']))
         if config.get('enable_inference', False):
             from src.streaming.verify_inference import verify_inference
@@ -181,6 +203,10 @@ def worker(config):
                 raise ValueError("Inference verification failed")
 
         report.update(accounting_complete=True, spark_version=spark.version, scala_version=scala)
+        if drift_monitor is not None:
+            report['drift'] = drift_monitor.finalize()
+            from src.streaming.drift_monitor import drift_succeeded
+            report['success'] = report['success'] and drift_succeeded(report['drift'])
     except (Exception, KeyboardInterrupt) as exc:
         report['success'] = False
         report['errors'].append(str(exc)[:2000] or type(exc).__name__)
@@ -193,11 +219,17 @@ def worker(config):
                 report['errors'].append('Spark cleanup failed: '+str(exc)[:500])
     if not report['accounting_complete']:
         try:
-            report.update(summarize(read_records(config['run_dir']), config['replay_id'],
-                                    config['expected_count'], config['topic'], config['max_records']))
+            merge_accounting(report, summarize(read_records(config['run_dir']), config['replay_id'],
+                                    config['expected_count'], config['topic'], config['max_records']), partial=True)
         except Exception as exc:
             report['errors'].append('Partial accounting failed: '+str(exc)[:500])
         report['success'] = False
+    if config.get('enable_drift', False):
+        from src.streaming.drift_monitor import failed_summary, drift_succeeded
+        report['drift'] = (drift_monitor.summary() if drift_monitor is not None else
+                           failed_summary(config, '; '.join(report['errors']) or 'Drift initialization failed'))
+        report['success'] = bool(report['success'] and drift_succeeded(report['drift']))
+    report['success'] = bool(report['success'] and not report['errors'])
     signal.signal(signal.SIGTERM, old_handler)
     report.update(replay_id=config['replay_id'], expected_count=config['expected_count'],
                   topic=config['topic'], connector=CONNECTOR,
@@ -227,13 +259,16 @@ def terminate_group(process):
 def supervise(config, timeout):
     run_dir = Path(config['run_dir'])
     run_dir.mkdir(parents=True, exist_ok=False) # never reuse checkpoint or overwrite a run
-    write_json(run_dir/'config.json',config)
     env = os.environ.copy()
     env['PYSPARK_SUBMIT_ARGS'] = '--driver-memory 1g pyspark-shell'
     env['PYSPARK_PYTHON'] = sys.executable
     process = None
     failure = None
     try:
+        if config.get('enable_drift', False):
+            from src.streaming.drift_monitor import prepare_drift_config
+            config = prepare_drift_config(config)
+        write_json(run_dir/'config.json',config)
         process = subprocess.Popen([sys.executable,'-m','src.streaming.spark_consumer',
                                     '--worker-config',str(run_dir/'config.json')],
                                    env=env, start_new_session=True)
@@ -253,13 +288,25 @@ def supervise(config, timeout):
     report = json.loads(path.read_text()) if path.exists() else {
         'success': False, 'accounting_complete': False, 'errors': []}
     if not path.exists():
-        report.update(summarize(read_records(run_dir), config['replay_id'],
-                                config['expected_count'], config['topic'], config['max_records']))
+        try:
+            merge_accounting(report, summarize(read_records(run_dir), config['replay_id'],
+                                config['expected_count'], config['topic'], config['max_records']), partial=True)
+        except Exception as exc:
+            report['errors'].append('Partial accounting failed: '+str(exc))
         report.update(success=False, accounting_complete=False,
                       counts_scope='completed batch files only; runtime did not finish')
     if failure:
         report['success'] = False
         report.setdefault('errors',[]).append(failure)
+    if config.get('enable_drift', False) and (failure or 'drift' not in report):
+        from src.streaming.drift_monitor import failed_summary
+        if 'drift' not in report:
+            report['drift'] = failed_summary(config, failure or 'Worker did not report drift')
+        report['success'] = False
+    if config.get('enable_drift', False):
+        from src.streaming.drift_monitor import drift_succeeded
+        report['success'] = bool(report['success'] and drift_succeeded(report.get('drift', {})))
+    report['success'] = bool(report['success'] and not report.get('errors'))
     report['run_dir'] = str(run_dir)
     write_json(path,report)
     return report
@@ -269,6 +316,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--worker-config', help=argparse.SUPPRESS)
     p.add_argument('--enable-inference', action='store_true')
+    p.add_argument('--enable-drift', action='store_true')
+    p.add_argument('--drift-reference')
     p.add_argument('--brokers',default='127.0.0.1:9092')
     p.add_argument('--topic')
     p.add_argument('--replay-id')
@@ -281,6 +330,10 @@ def main():
     if args.worker_config:
         return worker(json.loads(Path(args.worker_config).read_text()))
     try:
+        if args.enable_drift and not args.drift_reference:
+            raise ValueError('--drift-reference is required with --enable-drift')
+        if args.drift_reference and not args.enable_drift:
+            raise ValueError('--drift-reference requires --enable-drift')
         source_options(args.brokers,args.topic,args.batch_size)
         summarize([],args.replay_id,args.expected_count,args.topic,args.max_records)
         if not math.isfinite(args.timeout) or args.timeout <= 0:
@@ -288,6 +341,8 @@ def main():
         config = {k: getattr(args,k) for k in ('brokers','topic','replay_id','expected_count',
                                               'max_records','batch_size')}
         config['enable_inference'] = args.enable_inference
+        config['enable_drift'] = args.enable_drift
+        config['drift_reference'] = args.drift_reference
         config['run_dir'] = str(Path(args.run_dir or
             f'data/processed/spark/{uuid.uuid4()}').resolve())
         report = supervise(config,args.timeout)
