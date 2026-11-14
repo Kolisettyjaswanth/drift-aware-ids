@@ -58,6 +58,7 @@ class DriftMonitor:
         self.last_report = None
         self.evidence_paths = set()
         self.failure = None
+        self.finalization_failure = False
 
     def update(self):
         # Failure is sticky for this run, even if a later call would succeed.
@@ -90,7 +91,9 @@ class DriftMonitor:
         self.update() # also rechecks configured partition count at query completion
         result = self.summary()
         if not drift_succeeded(result):
-            raise DriftMonitoringError('Drift monitoring incomplete: '+result['status'])
+            self.failure = 'Drift monitoring incomplete: '+result['status']
+            self.finalization_failure = True
+            raise DriftMonitoringError(self.failure)
         return result
 
     def summary(self):
@@ -110,7 +113,7 @@ class DriftMonitor:
         if self.failure is not None:
             result['success'] = False
             result['evaluation_complete'] = False
-            if result['status'] in ('evaluated', 'insufficient_data'):
+            if not self.finalization_failure and result['status'] in ('evaluated', 'insufficient_data'):
                 result['status'] = 'monitoring_failure'
             if self.failure not in result['errors']:
                 result['errors'].append(self.failure)

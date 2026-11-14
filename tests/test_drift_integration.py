@@ -157,6 +157,27 @@ class SinkIntegrationTests(Fixture):
         self.assertFalse(monitor.summary()['success'])
         self.assertIsNone(monitor.summary()['windows'][0]['alert'])
 
+    def test_incomplete_finalize_failure_is_sticky_after_window_completes(self):
+        sink,monitor,cfg=self.make_sink()
+        first_batch=kafka_rows(10)
+        remaining=[]
+        for record in records(990,start=10):
+            event=record['event']
+            remaining.append({**record['kafka'],'key':event['event_id'].encode(),
+                              'value':encode_event(event)})
+
+        with patch('src.streaming.drift_monitor.require_single_partition'):
+            sink(Frame(first_batch),0)
+            with self.assertRaises(DriftMonitoringError):
+                monitor.finalize()
+            self.assertEqual(monitor.summary()['status'],'insufficient_data')
+
+            sink.drift_monitor=None
+            sink(Frame(remaining),1)
+            self.assertEqual(len(list(read_records(cfg['run_dir']))),1000)
+            with self.assertRaises(DriftMonitoringError):
+                monitor.finalize()
+
     def test_invalid_feature_fails_after_transport_commit(self):
         sink,monitor,cfg=self.make_sink()
         rows=kafka_rows(1)
@@ -176,6 +197,33 @@ class SinkIntegrationTests(Fixture):
         check.assert_not_called()
         self.assertEqual(len(list(read_records(cfg['run_dir']))),1)
         self.assertFalse(monitor.summary()['success'])
+
+    def test_partition_count_change_during_updates_is_sticky(self):
+        sink,monitor,cfg=self.make_sink()
+        sink.drift_monitor=None
+        sink(Frame(kafka_rows(1)),0)
+
+        def metadata(partition_count):
+            partitions={i:SimpleNamespace(error=None) for i in range(partition_count)}
+            return SimpleNamespace(topics={'flows':SimpleNamespace(error=None,
+                                                                   partitions=partitions)})
+
+        client=MagicMock()
+        client.list_topics.side_effect=[metadata(1),metadata(2),metadata(1)]
+        modules={'confluent_kafka':SimpleNamespace(),
+                 'confluent_kafka.admin':SimpleNamespace(AdminClient=lambda conf:client)}
+
+        with patch.dict('sys.modules',modules):
+            monitor.update()
+            with self.assertRaisesRegex(DriftMonitoringError,'exactly one configured Kafka partition'):
+                monitor.update()
+            with self.assertRaisesRegex(DriftMonitoringError,'exactly one configured Kafka partition'):
+                monitor.update()
+
+        self.assertEqual(client.list_topics.call_count,2)
+        summary=monitor.summary()
+        self.assertFalse(summary['success'])
+        self.assertIn('Drift requires exactly one configured Kafka partition',summary['errors'])
 
     def test_monitor_interruption_is_not_success(self):
         sink,monitor,cfg=self.make_sink()
