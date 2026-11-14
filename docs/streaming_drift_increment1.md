@@ -92,3 +92,11 @@ The full current-master suite was not run in this increment. Model-dependent,
 Spark/Kafka and real CIC-IDS2017 validation require local artifacts/runtime.
 No live acceptance, detector execution through Spark, or statistical performance
 result is claimed. This is a foundation checkpoint before pipeline wiring.
+
+## Increment 2 checkpoint
+
+The deferred KS execution and immutable persistence adapter is now implemented;
+see [increment 2](streaming_drift_increment2.md) for its APIs, outcome semantics,
+retry conflict policy and executed test results. Spark/CLI wiring and real-data
+acceptance are still deferred. The earlier deferred list records the state at
+increment 1 rather than claiming these new helpers are already wired live.
