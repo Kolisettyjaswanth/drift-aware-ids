@@ -33,8 +33,8 @@ def fingerprint(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
-def _validate_result(result):
-    """Validate serialization/shape only; decisions remain the existing detector's."""
+def _validate_result(result, settings):
+    """Check the detector contract using its existing feature decision helper."""
     canonical(result)
     if not isinstance(result, dict) or type(result.get('alert')) is not bool:
         raise ValueError('Malformed detector result')
@@ -47,9 +47,21 @@ def _validate_result(result):
                 raise ValueError('Invalid detector statistic or p-value')
         if type(values.get('drift_detected')) is not bool:
             raise ValueError('Invalid detector feature decision')
-    if (not isinstance(result.get('drifted_features'), list)
-            or type(result.get('drifted_feature_count')) is not int):
-        raise ValueError('Missing detector drift summary')
+    flagged = []
+    for feature in settings['features']:
+        values = result['features'][feature]
+        expected = ks.feature_alert(values['ks_statistic'], values['p_value'],
+            alpha=settings['alpha']/len(settings['features']), min_ks=settings['min_ks'])
+        if values['drift_detected'] != expected:
+            raise ValueError('Contradictory per-feature detector decision')
+        if expected:
+            flagged.append(feature)
+    if (result.get('drifted_features') != flagged
+            or type(result.get('drifted_feature_count')) is not int
+            or result['drifted_feature_count'] != len(flagged)):
+        raise ValueError('Contradictory detector feature list/count')
+    if result['alert'] != (len(flagged) >= settings['minimum_features']):
+        raise ValueError('Contradictory final detector alert')
 
 
 def evaluate_plan(reference, plan, *, replay_id):
@@ -130,7 +142,7 @@ def evaluate_plan(reference, plan, *, replay_id):
             try:
                 current = pd.DataFrame(window['feature_rows'])
                 result = ks.detect_window(values, current, **deepcopy(settings))
-                _validate_result(result)
+                _validate_result(result, settings)
                 entry.update(status='evaluated', ks_results=result, alert=result['alert'])
             except Exception as exc:
                 entry.update(status='monitoring_failure', error=f'{type(exc).__name__}: {exc}')

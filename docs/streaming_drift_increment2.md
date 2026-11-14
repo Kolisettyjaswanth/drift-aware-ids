@@ -122,3 +122,10 @@ single-partition metadata preflight, worker-level monitoring failure gating and
 end-to-end acceptance remain deferred. Pipeline correctness acceptance and
 capture-separated statistical performance validation must remain separate.
 No PR is created or merged at this checkpoint.
+
+## Increment 3 checkpoint
+
+Opt-in Spark wiring, broker partition preflight and worker success gating are
+now implemented; see [increment 3](streaming_drift_increment3.md). The earlier
+remaining-work list describes the increment-2 checkpoint. Live verification and
+statistical-performance acceptance are still not claimed.
