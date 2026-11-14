@@ -21,33 +21,98 @@ def write_json(path, value):
 
 
 class BatchSink:
-    """Atomic batch-ID files prevent foreachBatch retries inflating final counts.
+    """Persist validated batches and optionally their model predictions.
 
-    Not a resumable production sink. Every CLI invocation reserves a new run dir.
+    Transport batch files remain the completion marker.
+    This is a bounded local sink, not a production transaction system.
     """
-    def __init__(self, run_dir, max_records):
-        self.directory = Path(run_dir)/'batches'
+
+    def __init__(self, run_dir, max_records, inference_engine=None):
+        self.directory = Path(run_dir) / "batches"
         self.directory.mkdir()
         self.max_records = max_records
         self.sizes = {}
+        self.inference_engine = inference_engine
+
+        self.prediction_directory = None
+        if inference_engine is not None:
+            self.prediction_directory = Path(run_dir) / "predictions"
+            self.prediction_directory.mkdir()
 
     def __call__(self, frame, batch_id):
-        path = self.directory/f'batch-{batch_id:020d}.jsonl'
-        temp = path.with_suffix('.tmp')
+        path = self.directory / f"batch-{batch_id:020d}.jsonl"
+        temp = path.with_suffix(".tmp")
+
+        prediction_path = None
+        prediction_temp = None
+
+        if self.prediction_directory is not None:
+            prediction_path = (
+                self.prediction_directory
+                / f"batch-{batch_id:020d}.jsonl"
+            )
+            prediction_temp = prediction_path.with_suffix(".tmp")
+
         count = 0
-        previous = sum(n for batch,n in self.sizes.items() if batch != batch_id)
+        previous = sum(
+            n for batch, n in self.sizes.items()
+            if batch != batch_id
+        )
+        records = []
+
         try:
-            with temp.open('w', encoding='utf-8') as stream:
-                for row in frame.toLocalIterator(prefetchPartitions=False):
+            with temp.open("w", encoding="utf-8") as stream:
+                for row in frame.toLocalIterator(
+                    prefetchPartitions=False
+                ):
                     count += 1
-                    if previous+count > self.max_records:
-                        raise ValueError('Input safety cap exceeded; batch accounting incomplete')
+
+                    if previous + count > self.max_records:
+                        raise ValueError(
+                            "Input safety cap exceeded; "
+                            "batch accounting incomplete"
+                        )
+
                     record = validate_record(row)
-                    stream.write(json.dumps(record, allow_nan=False)+'\n')
+
+                    stream.write(
+                        json.dumps(record, allow_nan=False) + "\n"
+                    )
+
+                    if self.inference_engine is not None:
+                        records.append(record)
+
+            if self.inference_engine is not None:
+                from src.streaming.inference_batch import (
+                    predict_validated_batch,
+                )
+
+                predictions = predict_validated_batch(
+                    records,
+                    engine=self.inference_engine,
+                )
+
+                with prediction_temp.open(
+                    "w", encoding="utf-8"
+                ) as stream:
+                    for prediction in predictions:
+                        stream.write(
+                            json.dumps(
+                                prediction,
+                                allow_nan=False,
+                            ) + "\n"
+                        )
+
+                prediction_temp.replace(prediction_path)
+
             temp.replace(path)
             self.sizes[batch_id] = count
+
         finally:
             temp.unlink(missing_ok=True)
+
+            if prediction_temp is not None:
+                prediction_temp.unlink(missing_ok=True)
 
 
 def execute_query(spark, config):
@@ -55,7 +120,16 @@ def execute_query(spark, config):
     try:
         options = source_options(config['brokers'], config['topic'], config['batch_size'])
         frame = spark.readStream.format('kafka').options(**options).load()
-        sink = BatchSink(config['run_dir'], config['max_records'])
+        inference_engine = None
+        if config.get('enable_inference', False):
+            from src.streaming.inference import StreamingInference
+            inference_engine = StreamingInference()
+
+        sink = BatchSink(
+            config['run_dir'],
+            config['max_records'],
+            inference_engine=inference_engine,
+        )
         query = (frame.select('key','value','topic','partition','offset')
                  .writeStream.foreachBatch(sink)
                  .option('checkpointLocation', str(Path(config['run_dir'])/'checkpoint'))
@@ -98,6 +172,14 @@ def worker(config):
         execute_query(spark, config)
         report.update(summarize(read_records(config['run_dir']),config['replay_id'],
                                 config['expected_count'],config['topic'],config['max_records']))
+        if config.get('enable_inference', False):
+            from src.streaming.verify_inference import verify_inference
+            inference_result = verify_inference(config['run_dir'])
+            report['inference'] = inference_result
+
+            if not inference_result['verified']:
+                raise ValueError("Inference verification failed")
+
         report.update(accounting_complete=True, spark_version=spark.version, scala_version=scala)
     except (Exception, KeyboardInterrupt) as exc:
         report['success'] = False
@@ -186,6 +268,7 @@ def supervise(config, timeout):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--worker-config', help=argparse.SUPPRESS)
+    p.add_argument('--enable-inference', action='store_true')
     p.add_argument('--brokers',default='127.0.0.1:9092')
     p.add_argument('--topic')
     p.add_argument('--replay-id')
@@ -204,6 +287,7 @@ def main():
             raise ValueError('Timeout must be finite and positive')
         config = {k: getattr(args,k) for k in ('brokers','topic','replay_id','expected_count',
                                               'max_records','batch_size')}
+        config['enable_inference'] = args.enable_inference
         config['run_dir'] = str(Path(args.run_dir or
             f'data/processed/spark/{uuid.uuid4()}').resolve())
         report = supervise(config,args.timeout)
