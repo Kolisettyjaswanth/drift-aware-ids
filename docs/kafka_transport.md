@@ -1,4 +1,9 @@
-# Phase 1: Kafka transport (ready for local validation, not integration-verified)
+# Phase 1: Kafka transport
+
+Update: PR #2 is merged at master `24a2346`. The user reports successful
+100-event real-data replay/verification and broker restart persistence. These
+are user-executed results, not independent Work execution. Original
+implementation-time checks/limitations below remain historical evidence.
 
 ## Repository audit and design
 

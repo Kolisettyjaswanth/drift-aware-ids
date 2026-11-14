@@ -62,10 +62,11 @@ Offline preprocessing, scikit-learn Random Forest, held-out evaluation and KS
 experiments and controlled validators are implemented. The user reports the
 controlled CIC-IDS2017 gate passed at `6ba34e5`; see
 [attributed results and review](docs/controlled_real_validation.md). Phase 1 Kafka
-transport is implemented for local validation; see
-[Kafka transport](docs/kafka_transport.md). Broker/Docker and CIC-IDS2017 replay
-verification remain pending user execution. Spark, API, database, dashboard and
-evasion evaluation remain unimplemented.
+transport is merged through PR #2. The user reports 100/100 real-event replay
+and restart-persistence verification; see [Kafka transport](docs/kafka_transport.md).
+Kafka-to-Spark local acceptance code is implemented and awaits WSL validation;
+see [Spark streaming](docs/spark_streaming.md). ML inference, Spark drift processing,
+API, database, dashboard and evasion evaluation remain unimplemented.
 
 See [drift validation](docs/drift_validation.md) for commands, actual results,
 limitations and file-by-file changes. Earlier "planned" descriptions above

@@ -9,9 +9,13 @@
   produced 26 passed and one unavailable-data skip. See
   [review and evidence](controlled_real_validation.md).
 - Drift PR #1 merged into master at `2549b68` (verified from GitHub).
-- Phase 1 Kafka transport implemented on `feat/kafka-integration`: single-broker
-  Compose, bounded CSV replay, JSON schema, verification consumer and automated
-  tests. Docker/broker and CIC-IDS2017 replay are pending user validation; see
-  [Kafka transport](kafka_transport.md).
-- Not started: Spark, evasion evaluation, backend/database and frontend.
+- Kafka PR #2 merged; master `24a2346` verified on GitHub. User reports
+  100 events delivered/verified, restart persistence and 56 tests passed with
+  one expected skip. These are user-executed local results.
+- User reports PySpark 3.5.7 / Python 3.11.18 / Java 17 local[2] smoke test passed.
+- Kafka-to-Spark bounded acceptance consumer implemented on feature branch;
+  connector and actual real-data Spark acceptance remain pending WSL validation.
+  See [Spark streaming](spark_streaming.md).
+- Not started: Spark ML inference/drift processing, evasion evaluation,
+  backend/database and frontend.
   Deployment and temporal validation remain future work.
