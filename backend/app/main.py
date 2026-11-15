@@ -35,3 +35,8 @@ def list_runs(limit: int = Query(default=20, ge=1, le=100)):
             continue
         runs.append({"run_id": entry.name, "summary_present": True})
     return {"runs": runs, "count": len(runs), "limit": limit}
+
+@app.get("/api/runs/{run_id}")
+def get_run(run_id: str):
+    from backend.app.run_evidence import read_run_summary
+    return read_run_summary(evidence_root(), run_id)
