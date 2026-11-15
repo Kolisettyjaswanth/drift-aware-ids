@@ -36,8 +36,21 @@ class PreflightTests(unittest.TestCase):
 
     def test_invalid_numeric(self):
         self.write_csv(["a", "b", "Label"], [["1", "oops", "BENIGN"]])
-        with self.assertRaisesRegex(ValueError, "missing/nonfinite/non-numeric"):
+        with self.assertRaisesRegex(ValueError, "No records"):
             preflight(self.source, self.manifest)
+
+    def test_mixed_valid_and_missing_features_preserved(self):
+        self.write_csv(["a", "b", "Label"], [
+            ["1", "2", "BENIGN"],
+            ["3", "", "BENIGN"],
+            ["4", "5", "ATTACK"],
+        ])
+        result = preflight(self.source, self.manifest, max_rows=3)
+        self.assertEqual(result["rows"], 3)
+        self.assertEqual(result["valid_rows"], 2)
+        self.assertEqual(result["invalid_rows"], 1)
+        self.assertEqual(result["invalid_source_rows"], [1])
+        self.assertEqual(result["invalid_fields"], {"b": 1})
 
     def test_oversized_source(self):
         self.write_csv(["a", "b", "Label"], [["1", "2", "BENIGN"], ["3", "4", "BENIGN"]])
