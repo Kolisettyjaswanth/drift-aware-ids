@@ -33,6 +33,7 @@ def preflight(source, features_path, *, max_rows=1000):
     checked = 0
     invalid_rows = 0
     invalid_fields = {}
+    invalid_source_rows = []
     for event in csv_events(source, "preflight"):
         if checked == max_rows:
             raise ValueError(f"Input exceeds max_rows={max_rows}; use a bounded CSV")
@@ -40,16 +41,21 @@ def preflight(source, features_path, *, max_rows=1000):
         invalid = [name for name in features if event["features"][name] is None]
         if invalid:
             invalid_rows += 1
+            invalid_source_rows.append(checked - 1)
             for name in invalid:
                 invalid_fields[name] = invalid_fields.get(name, 0) + 1
     if checked == 0:
         raise ValueError("CSV has no data rows")
-    if invalid_rows:
-        raise ValueError(f"{invalid_rows} rows have missing/nonfinite/non-numeric required model features: {invalid_fields}")
+    if invalid_rows == checked:
+        raise ValueError("No records have all required numeric model features")
     return {
         "status": "compatible",
         "source": str(source),
         "rows": checked,
+        "valid_rows": checked - invalid_rows,
+        "invalid_rows": invalid_rows,
+        "invalid_source_rows": invalid_source_rows,
+        "invalid_fields": invalid_fields,
         "required_features": len(features),
         "extra_columns": [name for name in headers if name not in features and name not in {"Label", "SourceFile"}],
         "note": "Schema and numeric compatibility only; not a model performance or attack validation",
