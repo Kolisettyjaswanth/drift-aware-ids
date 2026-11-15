@@ -1,5 +1,6 @@
 """Isolated read-only API tests; no Kafka or Spark required."""
 import os
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -125,6 +126,91 @@ class EvidenceApiTests(unittest.TestCase):
         self.assertEqual(
             self.client.get("/api/runs/missing-batches/predictions").status_code, 422
         )
+
+    def _drift_fixture(self, *, mismatch=False, missing=False):
+        directory = self.root / "drift-case"
+        directory.mkdir()
+        snapshot = "a" * 64
+        reference = "b" * 64
+        window = {"window_index": 0, "status": "evaluated",
+                  "records": 1000, "alert": True, "source_capture": "PortScan"}
+        drift = {"status": "evaluated", "success": True,
+                 "evaluation_complete": True, "snapshot_id": snapshot,
+                 "reference_sha256": reference, "evaluated_windows": 1,
+                 "windows": [window], "errors": []}
+        (directory / "summary.json").write_text(json.dumps(
+            {"success": True, "accounting_complete": True, "drift": drift}))
+        if not missing:
+            evaluations = directory / "drift" / "evaluations"
+            evaluations.mkdir(parents=True)
+            report = {"snapshot_id": "c" * 64 if mismatch else snapshot,
+                      "status": "evaluated", "success": True,
+                      "evaluation_complete": True, "evaluated_windows": 1,
+                      "reference": {"sha256": reference},
+                      "windows": [{**window, "membership": [{"event_id": "hidden"}],
+                                   "ks_results": {"alert": True, "features": {}}}]}
+            (evaluations / (snapshot + ".json")).write_text(json.dumps(report))
+        return directory
+
+    def test_drift_disabled(self):
+        directory = self.root / "drift-disabled"
+        directory.mkdir()
+        (directory / "summary.json").write_text(
+            '{"success":true,"accounting_complete":true,"drift":null}'
+        )
+        response = self.client.get("/api/runs/drift-disabled/drift")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "disabled")
+
+    def test_drift_authoritative_snapshot_compact(self):
+        self._drift_fixture()
+        response = self.client.get("/api/runs/drift-case/drift")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["evaluated_windows"], 1)
+        self.assertIs(data["windows"][0]["alert"], True)
+        self.assertIn("ks_results", data["windows"][0])
+        self.assertNotIn("membership", data["windows"][0])
+
+    def test_drift_missing_snapshot_rejected(self):
+        self._drift_fixture(missing=True)
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
+
+    def test_drift_snapshot_mismatch_rejected(self):
+        self._drift_fixture(mismatch=True)
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
+
+    def test_drift_failure_without_snapshot(self):
+        directory = self.root / "drift-failure"
+        directory.mkdir()
+        (directory / "summary.json").write_text(json.dumps({
+            "success": False, "accounting_complete": False,
+            "drift": {"status": "monitoring_failure", "success": False,
+                      "evaluation_complete": False, "evaluated_windows": 0,
+                      "errors": ["partition mismatch"], "windows": []}}))
+        response = self.client.get("/api/runs/drift-failure/drift")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "monitoring_failure")
+
+    def test_drift_insufficient_data_without_snapshot(self):
+        directory = self.root / "drift-partial"
+        directory.mkdir()
+        (directory / "summary.json").write_text(json.dumps({
+            "success": False, "accounting_complete": False,
+            "drift": {"status": "insufficient_data", "success": False,
+                      "evaluation_complete": False, "evaluated_windows": 0,
+                      "windows": [{"window_index": 0, "status": "insufficient_data",
+                                   "records": 200, "alert": None}],
+                      "errors": []}}))
+        response = self.client.get("/api/runs/drift-partial/drift")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["windows"][0]["alert"])
+
+    def test_drift_malformed_snapshot_rejected(self):
+        directory = self._drift_fixture()
+        path = directory / "drift" / "evaluations" / (("a" * 64) + ".json")
+        path.write_text("not-json")
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
 
 
 if __name__ == "__main__":
