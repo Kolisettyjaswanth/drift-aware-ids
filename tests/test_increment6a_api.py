@@ -63,7 +63,7 @@ class EvidenceApiTests(unittest.TestCase):
 
     def test_run_detail_rejects_traversal(self):
         self.assertEqual(self.client.get("/api/runs/..").status_code, 404)
-        self.assertEqual(self.client.get("/api/runs/%2E%2E").status_code, 404)
+        self.assertEqual(self.client.get("/api/runs/%2E%2E").status_code, 400)
 
     def test_run_detail_rejects_malformed_summary(self):
         directory = self.root / "bad"
