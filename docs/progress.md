@@ -1,21 +1,22 @@
 # Progress
 
-- Implemented: dataset preparation/audit, development Random Forest, held-out
-  capture evaluation, shared KS detector and controlled drift validation.
-- User-executed at 6ba34e5 (Python 3.11.18): 27/27 tests passed; controlled
-  CIC-IDS2017 gate passed with 0/200 unchanged, 200/200 location, 200/200 scale
-  alerts. These are reported local results, not independent assistant execution.
-- Assistant review: no blocking issue for the scoped offline increment; rerun
-  produced 26 passed and one unavailable-data skip. See
-  [review and evidence](controlled_real_validation.md).
-- Drift PR #1 merged into master at `2549b68` (verified from GitHub).
-- Kafka PR #2 merged; master `24a2346` verified on GitHub. User reports
-  100 events delivered/verified, restart persistence and 56 tests passed with
-  one expected skip. These are user-executed local results.
-- User reports PySpark 3.5.7 / Python 3.11.18 / Java 17 local[2] smoke test passed.
-- Kafka-to-Spark bounded acceptance consumer implemented on feature branch;
-  connector and actual real-data Spark acceptance remain pending WSL validation.
-  See [Spark streaming](spark_streaming.md).
-- Not started: Spark ML inference/drift processing, evasion evaluation,
-  backend/database and frontend.
-  Deployment and temporal validation remain future work.
+## Completed research and pipeline milestones
+
+- CIC-IDS2017 preparation and audit, development RandomForest, capture-held-out evaluation, KS drift validation, and evasion/perturbation research components.
+- Kafka bounded CSV replay, Spark Structured Streaming transport, saved model inference, optional drift monitoring, and persisted run evidence.
+- Increment 6A: read-only FastAPI evidence endpoints, including run summaries, drift evidence, verified predictions and counts.
+- Increment 6B: React/TypeScript/Vite saved-evidence dashboard, search, reliability disclosures, pagination, and responsive layouts.
+
+## Increment 6 acceptance (user-executed, November 2026)
+
+- Python `unittest`: 250 tests run, 248 passed, 2 intentionally skipped (opt-in live Kafka and Spark integration tests), no failures.
+- Final React `npm run build`: passed; Vite transformed 28 modules.
+- Browser: seven checks passed, including next/previous prediction pagination and 390px mobile layout.
+- Git feature branch `feat/increment6b-react-dashboard` was clean and synchronized at `238e4ca` before this documentation update.
+- See [Increment 6 closure audit](increment6_closure_audit.md) for scope, evidence, and limitations.
+
+## Research limitations and future work
+
+This is bounded recorded flow replay, **not live packet capture or production intrusion prevention**. The model is scikit-learn RandomForest, not Spark MLlib. Held-out PortScan recall was extremely poor and should not be obscured by development-split accuracy. Drift alerts indicate distribution change, not confirmed malicious traffic. PostgreSQL persistence and deployment hardening are not part of Increment 6. The two opt-in live integration tests were skipped in the final suite, so that run does not independently revalidate live broker behavior.
+
+Increment 7 reusable input analysis remains separate and paused pending Increment 6 closure. Do not merge into `master` without approval.
