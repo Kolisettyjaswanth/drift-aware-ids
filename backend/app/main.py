@@ -40,3 +40,12 @@ def list_runs(limit: int = Query(default=20, ge=1, le=100)):
 def get_run(run_id: str):
     from backend.app.run_evidence import read_run_summary
     return read_run_summary(evidence_root(), run_id)
+
+@app.get("/api/runs/{run_id}/predictions")
+def get_predictions(
+    run_id: str,
+    offset: int = Query(default=0, ge=0, le=1000000),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    from backend.app.prediction_evidence import read_predictions
+    return read_predictions(evidence_root(), run_id, offset, limit)
