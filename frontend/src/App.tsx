@@ -1,59 +1,99 @@
 import { useEffect, useState } from "react";
 import { getJson, type Drift, type Predictions, type Run, type RunDetail } from "./api";
 
-const PAGE_SIZE = 20;
-const message = (error: unknown) => error instanceof Error ? error.message : "Unexpected error";
-
+const SIZE = 20;
+const errorText = (e: unknown) => e instanceof Error ? e.message : "Unexpected error";
+function nameOf(id: string) {
+  if (id.startsWith("drift-partial")) return "Partial traffic analysis";
+  if (id.startsWith("drift-")) return "Traffic change analysis";
+  if (id.startsWith("transport")) return "Data delivery check";
+  if (/^\d{8}T/.test(id)) return "Intrusion prediction analysis";
+  return "Recorded analysis";
+}
+function dateOf(id: string) {
+  const m = id.match(/(20\d{6})T(\d{6})/);
+  if (!m) return "Saved session";
+  return `${m[1].slice(0,4)}-${m[1].slice(4,6)}-${m[1].slice(6,8)} · ${m[2].slice(0,2)}:${m[2].slice(2,4)} UTC`;
+}
+function trafficMessage(d: Drift) {
+  if (d.status === "disabled") return { label: "Not checked", description: "Traffic change monitoring was switched off. This does not mean traffic was normal.", tone: "neutral" };
+  if (!d.success || !d.evaluation_complete) return { label: "Result unavailable", description: "This comparison did not finish. We cannot say whether traffic changed.", tone: "caution" };
+  if (d.windows.some(w => w.status === "evaluated" && w.alert === true)) return { label: "Change detected", description: "Traffic patterns differed from the reference data. This does not prove an attack.", tone: "attention" };
+  if (d.windows.some(w => w.status === "evaluated" && w.alert === false)) return { label: "No change flagged", description: "The completed comparisons did not flag a change. This is not a guarantee of safety.", tone: "positive" };
+  return { label: "Not evaluated", description: "No completed comparison is available.", tone: "neutral" };
+}
+function predictionMessage(d: RunDetail) {
+  if (!d.success || !d.accounting_complete) return { label: "Analysis incomplete", description: "The run did not finish successfully. Predictions may be missing.", tone: "caution" };
+  if (!d.inference?.verified) return { label: "No verified predictions", description: "This session has no verified model classifications.", tone: "neutral" };
+  return { label: "Results available", description: "The model's saved classifications can be explored below. These are not confirmed attacks.", tone: "positive" };
+}
 export default function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [runId, setRunId] = useState("");
+  const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [drift, setDrift] = useState<Drift | null>(null);
   const [predictions, setPredictions] = useState<Predictions | null>(null);
   const [offset, setOffset] = useState(0);
-  const [error, setError] = useState("");
+  const [reload, setReload] = useState(0);
   const [loading, setLoading] = useState(false);
-
+  const [error, setError] = useState("");
+  const [predictionError, setPredictionError] = useState("");
   useEffect(() => {
-    const controller = new AbortController();
-    getJson<{ runs: Run[] }>("/api/runs?limit=100", controller.signal)
-      .then(data => setRuns(data.runs))
-      .catch(err => { if (!controller.signal.aborted) setError(message(err)); });
-    return () => controller.abort();
-  }, []);
-
+    const c = new AbortController();
+    getJson<{ runs: Run[] }>("/api/runs?limit=100", c.signal).then(v => setRuns(v.runs))
+      .catch(e => { if (!c.signal.aborted) setError(errorText(e)); });
+    return () => c.abort();
+  }, [reload]);
   useEffect(() => {
-    setDetail(null); setDrift(null); setPredictions(null); setError("");
+    setDetail(null); setDrift(null); setPredictions(null); setError(""); setPredictionError("");
     if (!runId) return;
-    const controller = new AbortController();
+    const c = new AbortController();
     setLoading(true);
     Promise.all([
-      getJson<RunDetail>(`/api/runs/${encodeURIComponent(runId)}`, controller.signal),
-      getJson<Drift>(`/api/runs/${encodeURIComponent(runId)}/drift`, controller.signal),
-    ]).then(([run, driftData]) => { setDetail(run); setDrift(driftData); })
-      .catch(err => { if (!controller.signal.aborted) setError(message(err)); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+      getJson<RunDetail>(`/api/runs/${encodeURIComponent(runId)}`, c.signal),
+      getJson<Drift>(`/api/runs/${encodeURIComponent(runId)}/drift`, c.signal)
+    ]).then(([a,b]) => { setDetail(a); setDrift(b); })
+      .catch(e => { if (!c.signal.aborted) setError(errorText(e)); })
+      .finally(() => { if (!c.signal.aborted) setLoading(false); });
+    return () => c.abort();
   }, [runId]);
-
   useEffect(() => {
-    setPredictions(null);
+    setPredictions(null); setPredictionError("");
     if (!runId || !detail?.success || !detail.accounting_complete || !detail.inference?.verified) return;
-    const controller = new AbortController();
-    getJson<Predictions>(`/api/runs/${encodeURIComponent(runId)}/predictions?offset=${offset}&limit=${PAGE_SIZE}`, controller.signal)
-      .then(setPredictions)
-      .catch(err => { if (!controller.signal.aborted) setError(message(err)); });
-    return () => controller.abort();
+    const c = new AbortController();
+    getJson<Predictions>(`/api/runs/${encodeURIComponent(runId)}/predictions?offset=${offset}&limit=${SIZE}`, c.signal)
+      .then(setPredictions).catch(e => { if (!c.signal.aborted) setPredictionError(errorText(e)); });
+    return () => c.abort();
   }, [runId, detail, offset]);
-
-  return <main>
-    <header><p className="eyebrow">CIC-IDS2017 · Bounded replay evidence</p><h1>Intrusion Detection Evidence</h1><p>Read-only inspection of persisted Kafka/Spark run results. Not a live network monitor.</p></header>
-    <section><label htmlFor="run">Select a replay run</label><select id="run" value={runId} onChange={e => { setOffset(0); setRunId(e.target.value); }}><option value="">Choose a run</option>{runs.map(r => <option key={r.run_id} value={r.run_id}>{r.run_id}</option>)}</select><button onClick={() => window.location.reload()}>Refresh run list</button></section>
-    {loading && <p role="status">Loading evidence…</p>}
-    {error && <p role="alert" className="error">{error}</p>}
-    {detail && <section><h2>Run integrity</h2><div className="stats"><div><span>Run success</span><strong>{String(detail.success)}</strong></div><div><span>Accounting complete</span><strong>{String(detail.accounting_complete)}</strong></div><div><span>Inference verified</span><strong>{detail.inference ? String(detail.inference.verified) : "Unavailable"}</strong></div><div><span>Prediction count</span><strong>{detail.inference?.predictions ?? "N/A"}</strong></div></div>{detail.errors?.length > 0 && <p className="error">{detail.errors.join("; ")}</p>}</section>}
-    {drift && <section><h2>KS drift monitoring</h2><p><strong>Status:</strong> {drift.status} · <strong>Evaluation complete:</strong> {String(drift.evaluation_complete)}</p>{drift.status === "disabled" ? <p>Monitoring was disabled. No drift conclusion is available.</p> : drift.windows.length === 0 ? <p>No evaluated windows available.</p> : drift.windows.map(w => <article key={w.window_index}><h3>Window {w.window_index} · {w.records} records</h3><p>Status: {w.status} · Drift alert: <strong>{w.alert === null ? "Not evaluated" : w.alert ? "Detected" : "Not detected"}</strong></p>{w.source_capture && <p>Capture: {w.source_capture}</p>}{w.ks_results?.features && <div className="scroll"><table><thead><tr><th>Feature</th><th>KS statistic</th><th>p-value</th><th>Drift detected</th></tr></thead><tbody>{Object.entries(w.ks_results.features).map(([name, v]) => <tr key={name}><td>{name}</td><td>{v.ks_statistic}</td><td>{v.p_value}</td><td>{String(v.drift_detected)}</td></tr>)}</tbody></table></div>}</article>)}{drift.errors?.length > 0 && <p className="error">{drift.errors.join("; ")}</p>}</section>}
-    {detail && <section><h2>Model predictions</h2><p>These are model classifications, not KS drift alerts. The held-out classifier has known severe generalization limitations.</p>{!detail.inference?.verified || !detail.success || !detail.accounting_complete ? <p>Verified predictions are unavailable for this run.</p> : predictions ? <><p>Showing {predictions.predictions.length} of {predictions.total} verified predictions, starting at offset {offset}.</p><div className="scroll"><table><thead><tr><th>Event ID</th><th>Source row</th><th>Prediction</th><th>Attack probability</th></tr></thead><tbody>{predictions.predictions.map((p,i) => <tr key={p.event_id + "-" + i}><td>{p.event_id}</td><td>{p.source_row}</td><td>{p.prediction_label}</td><td>{Number(p.probability_attack).toFixed(4)}</td></tr>)}</tbody></table></div><div className="pager"><button disabled={offset===0} onClick={() => setOffset(Math.max(0,offset-PAGE_SIZE))}>Previous</button><span>Offset {offset}</span><button disabled={offset+PAGE_SIZE>=predictions.total} onClick={() => setOffset(offset+PAGE_SIZE)}>Next</button></div></> : <p>Loading verified predictions…</p>}</section>}
-    <footer>Evidence viewer only · No claims of production detection accuracy or continuous streaming</footer>
-  </main>;
+  const visible = runs.filter(r => `${nameOf(r.run_id)} ${r.run_id} ${dateOf(r.run_id)}`.toLowerCase().includes(search.toLowerCase()));
+  const complete = detail?.success === true && detail.accounting_complete === true;
+  const p = detail ? predictionMessage(detail) : null;
+  const d = drift ? trafficMessage(drift) : null;
+  return <div className="shell">
+    <aside className="sidebar"><div className="brand"><span className="brand-icon">◈</span><div><strong>Sentinel</strong><small>Network insights</small></div></div><div className="nav-label">WORKSPACE</div><div className="nav-active">◫ &nbsp; Overview</div><div className="side-foot"><span className="live-dot"/> Research demonstration<br/><small>Previously recorded data</small></div></aside>
+    <div className="main-area"><div className="topbar"><span>Workspace <span className="slash">/</span> <strong>Overview</strong></span><span className="environment">● &nbsp; DEMO ENVIRONMENT</span></div>
+    <main className="page">
+      <header className="hero"><div><div className="eyebrow">YOUR SECURITY OVERVIEW</div><h1>Understand your network.</h1><p>Explore what the system observed in recorded network traffic, in plain language.</p></div><div className="hero-art" aria-hidden="true"><span>⌁</span></div></header>
+      <div className="notice"><span className="notice-icon">ⓘ</span><div><strong>This is a research demonstration.</strong><p>These are saved test results, not live monitoring. A warning does not confirm a real-world cyberattack.</p></div></div>
+      <section className="panel"><div className="panel-heading"><div><span className="eyebrow">EXPLORE RESULTS</span><h2>Choose an analysis</h2><p>Pick a saved session to see what happened. Technical names are optional.</p></div><button className="refresh" onClick={() => setReload(x => x+1)}>↻ Refresh</button></div>
+        <div className="search-row"><label className="searchbox"><span>⌕</span><span className="sr-only">Search saved analyses</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Find an analysis by name or date"/></label><span className="count">{visible.length} sessions</span></div>
+        <div className="session-grid">{visible.map(r => <button key={r.run_id} aria-pressed={runId===r.run_id} className={`session ${runId===r.run_id?"selected":""}`} onClick={() => {setRunId(r.run_id);setOffset(0);}}><span className="session-mark">{r.run_id.startsWith("drift")?"⌁":"◫"}</span><span><strong>{nameOf(r.run_id)}</strong><small>{dateOf(r.run_id)}</small></span><span className="session-arrow">→</span></button>)}</div>
+        {visible.length===0 && <p className="empty">No matching sessions. Try another search.</p>}
+        {runs.length===100 && <p className="subtle">Showing up to 100 recent sessions.</p>}
+      </section>
+      {error && <div role="alert" className="error">Unable to load the analysis: {error}</div>}
+      {loading && <p role="status" className="loading">Loading saved evidence…</p>}
+      {!runId && <section className="empty-state"><span className="empty-symbol">◈</span><h2>Your results will appear here</h2><p>Choose an analysis above to explore a clear summary of the saved evidence.</p></section>}
+      {detail && drift && !loading && <div className="results">
+        <div className="results-heading"><div><span className="eyebrow">ANALYSIS SUMMARY</span><h2>{nameOf(runId)}</h2><p>{dateOf(runId)} · Saved session</p></div><span className={`pill ${complete?"positive":"caution"}`}>{complete?"Analysis finished":"Analysis incomplete"}</span></div>
+        <div className="insight-grid"><article className={`insight ${p?.tone}`}><div className="insight-icon">◈</div><span className="eyebrow">INTRUSION PREDICTIONS</span><h3>{p?.label}</h3><p>{p?.description}</p><div className="insight-foot">{detail.inference?.verified && complete ? `${detail.inference.predictions ?? "Verified"} saved classifications` : "No confirmed prediction result"}</div></article>
+        <article className={`insight ${d?.tone}`}><div className="insight-icon">⌁</div><span className="eyebrow">TRAFFIC PATTERN CHANGES</span><h3>{d?.label}</h3><p>{d?.description}</p><div className="insight-foot">{drift.evaluation_complete ? `${drift.windows.filter(w=>w.alert===true).length} flagged out of ${drift.windows.filter(w=>w.status==="evaluated").length} evaluated samples` : "No completed conclusion"}</div></article></div>
+        <section className="panel"><span className="eyebrow">RESULT RELIABILITY</span><h2>How complete is this analysis?</h2><p>Results are marked verified only when the saved evidence supports them.</p><div className="reliability"><div><span className={detail.success?"ok":"warn"}>{detail.success?"✓":"!"}</span><div><strong>Processing</strong><small>{detail.success?"Finished successfully":"Did not finish successfully"}</small></div></div><div><span className={detail.accounting_complete?"ok":"warn"}>{detail.accounting_complete?"✓":"!"}</span><div><strong>Records checked</strong><small>{detail.accounting_complete?"All expected records accounted for":"Record accounting incomplete"}</small></div></div><div><span className={detail.inference?.verified?"ok":"neutral-mark"}>{detail.inference?.verified?"✓":"i"}</span><div><strong>Model evidence</strong><small>{detail.inference?.verified?"Predictions verified":"Not available or not verified"}</small></div></div></div>{detail.errors?.length>0 && <p className="error">{detail.errors.join("; ")}</p>}</section>
+        <section className="panel"><span className="eyebrow">DETAILED FINDINGS</span><h2>Did network traffic patterns change?</h2><p>Traffic change means patterns differed from a reference sample. It does not automatically mean an intrusion.</p>{drift.status==="disabled" ? <div className="inline-empty">ⓘ &nbsp; Monitoring was switched off for this session.</div> : drift.windows.length===0 ? <div className="inline-empty">ⓘ &nbsp; No completed traffic comparisons are available.</div> : <div className="windows">{drift.windows.map(w=><div className="window" key={w.window_index}><div><strong>Traffic sample {w.window_index+1}</strong><small>{w.records.toLocaleString()} network records</small></div><span className={`pill ${w.alert===true?"attention":w.alert===false?"positive":"caution"}`}>{w.alert===true?"Change detected":w.alert===false?"No change flagged":"Not evaluated"}</span>{w.ks_results && <details className="details"><summary>View statistical details</summary><pre>{JSON.stringify(w.ks_results,null,2)}</pre></details>}</div>)}</div>}{drift.errors?.length>0 && <p className="error">{drift.errors.join("; ")}</p>}</section>
+        <section className="panel"><span className="eyebrow">SAVED CLASSIFICATIONS</span><h2>What did the model predict?</h2><p>These automated labels are not confirmed security incidents.</p>{!complete||!detail.inference?.verified ? <div className="inline-empty">ⓘ &nbsp; Verified predictions are unavailable for this session.</div> : predictionError ? <p role="alert" className="error">Could not load predictions: {predictionError}</p> : !predictions ? <p role="status">Loading predictions…</p> : <><div className="table-meta"><span>{predictions.total.toLocaleString()} saved classifications</span><span>Showing {predictions.total===0?0:offset+1}–{Math.min(offset+predictions.predictions.length,predictions.total)}</span></div><div className="table-scroll"><table><thead><tr><th>Network record</th><th>Model prediction</th><th>Estimated attack probability</th></tr></thead><tbody>{predictions.predictions.map((x,i)=><tr key={x.event_id+i}><td>Record {x.source_row+1}</td><td><span className={`tag ${x.prediction===1?"tag-attention":"tag-neutral"}`}>{x.prediction===1?"Possible attack":"Predicted normal"}</span></td><td>{Number.isFinite(x.probability_attack)?`${(x.probability_attack*100).toFixed(1)}%`:"Unavailable"}</td></tr>)}</tbody></table></div><div className="pager"><button disabled={offset===0} onClick={()=>setOffset(Math.max(0,offset-SIZE))}>← Previous</button><span>{predictions.total===0?0:offset+1}–{Math.min(offset+predictions.predictions.length,predictions.total)} of {predictions.total}</span><button disabled={offset+SIZE>=predictions.total} onClick={()=>setOffset(offset+SIZE)}>Next →</button></div></>}</section>
+        <details className="technical"><summary>Technical details for researchers</summary><div><p><strong>Run identifier:</strong> <code>{runId}</code></p><p><strong>Drift status:</strong> {drift.status}</p><p><strong>Snapshot identifier:</strong> <code>{drift.snapshot_id??"None"}</code></p><p><strong>Evaluation complete:</strong> {drift.evaluation_complete?"Yes":"No"}</p><p>KS refers to the Kolmogorov–Smirnov statistical test.</p></div></details>
+      </div>}
+      <footer><strong>Sentinel</strong> · Research evidence explorer <span>Historical replay only · Not a real-time security service · Model reliability on unseen attacks is limited</span></footer>
+    </main></div></div>;
 }
