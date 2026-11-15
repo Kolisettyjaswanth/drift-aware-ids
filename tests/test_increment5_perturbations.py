@@ -61,6 +61,22 @@ class PerturbationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "binary"):
             evaluate_perturbation(ThresholdModel(), self.features, [1, 2, 0, 0], "packet_size")
 
+    def test_transition_accounting(self):
+        result = self.run_eval(0.1)
+        self.assertEqual(sum(result["transitions"].values()), result["prediction_flips"])
+        self.assertEqual(result["transitions"]["attack_1_to_0"], result["newly_missed_attacks"])
+
+    def test_benign_false_positive_correction(self):
+        result = evaluate_perturbation(
+            ThresholdModel(),
+            pd.DataFrame({"packet_size": [10.0, 9.0]}),
+            [0, 1],
+            "packet_size",
+            0.1,
+        )
+        self.assertEqual(result["transitions"]["benign_1_to_0"], 0)
+        self.assertEqual(sum(result["transitions"].values()), result["prediction_flips"])
+
     def test_positive_evasion_count(self):
         class ReverseModel:
             def predict(self, frame):
@@ -69,6 +85,7 @@ class PerturbationTests(unittest.TestCase):
         self.assertEqual(result["originally_detected_attacks"], 2)
         self.assertEqual(result["newly_missed_attacks"], 1)
         self.assertEqual(result["conditional_evasion_rate"], 0.5)
+        self.assertEqual(result["transitions"]["attack_1_to_0"], 1)
 
 
 if __name__ == "__main__":
