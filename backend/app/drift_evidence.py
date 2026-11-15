@@ -35,7 +35,10 @@ def read_drift(root: Path, run_id: str) -> dict:
     if not SHA256.fullmatch(snapshot_id or ""):
         if drift["success"] is True or base["evaluation_complete"]:
             raise HTTPException(status_code=422, detail="Missing authoritative snapshot")
-        return {**base, "windows": _compact_windows(base["windows"])}
+        try:
+            return {**base, "windows": _compact_windows(base["windows"])}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Malformed drift summary") from exc
 
     directory = root / run_id / "drift" / "evaluations"
     path = directory / (snapshot_id + ".json")
@@ -69,7 +72,7 @@ def read_drift(root: Path, run_id: str) -> dict:
         if sum(w["status"] == "evaluated" for w in compact) != report["evaluated_windows"]:
             raise ValueError("Drift evaluation count mismatch")
         summary_windows = _compact_windows(base["windows"])
-        if compact != summary_windows:
+        if [{k: v for k, v in w.items() if k != "ks_results"} for w in compact] != summary_windows:
             raise ValueError("Drift window summary mismatch")
         return {**base, "windows": compact}
     except (OSError, ValueError, TypeError, UnicodeError, KeyError) as exc:
