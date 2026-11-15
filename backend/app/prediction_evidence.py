@@ -32,15 +32,14 @@ def read_predictions(root: Path, run_id: str, offset: int, limit: int) -> dict:
             or {p.name for p in transport} != {p.name for p in predictions}):
         raise HTTPException(status_code=422, detail="Inference batch mismatch")
 
-    total_bytes = 0
-    for path in transport + predictions:
-        if path.is_symlink() or not path.is_file():
-            raise HTTPException(status_code=422, detail="Unsafe inference evidence")
-        total_bytes += path.stat().st_size
-        if total_bytes > MAX_EVIDENCE_BYTES:
-            raise HTTPException(status_code=413, detail="Evidence exceeds API verification budget")
-
     try:
+        total_bytes = 0
+        for path in transport + predictions:
+            if path.is_symlink() or not path.is_file():
+                raise HTTPException(status_code=422, detail="Unsafe inference evidence")
+            total_bytes += path.stat().st_size
+            if total_bytes > MAX_EVIDENCE_BYTES:
+                raise HTTPException(status_code=413, detail="Evidence exceeds API verification budget")
         verified = verify_inference(directory)
         if verified != declared:
             raise ValueError("Stored inference verification differs from evidence")
