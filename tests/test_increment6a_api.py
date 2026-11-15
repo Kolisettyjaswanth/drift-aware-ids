@@ -85,6 +85,47 @@ class EvidenceApiTests(unittest.TestCase):
         (directory / "summary.json").symlink_to(target)
         self.assertEqual(self.client.get("/api/runs/linked-summary").status_code, 404)
 
+    def test_predictions_unverified_run_is_rejected(self):
+        directory = self.root / "unverified"
+        directory.mkdir()
+        (directory / "summary.json").write_text(
+            '{"success":true,"accounting_complete":true,"inference":null}'
+        )
+        self.assertEqual(
+            self.client.get("/api/runs/unverified/predictions").status_code, 409
+        )
+
+    def test_predictions_incomplete_run_is_rejected(self):
+        directory = self.root / "incomplete"
+        directory.mkdir()
+        (directory / "summary.json").write_text(
+            '{"success":false,"accounting_complete":false,'
+            '"inference":{"verified":true}}'
+        )
+        self.assertEqual(
+            self.client.get("/api/runs/incomplete/predictions").status_code, 409
+        )
+
+    def test_predictions_pagination_limits(self):
+        self.assertEqual(
+            self.client.get("/api/runs/example/predictions?limit=101").status_code, 422
+        )
+        self.assertEqual(
+            self.client.get("/api/runs/example/predictions?offset=-1").status_code, 422
+        )
+
+    def test_predictions_missing_evidence_is_rejected(self):
+        directory = self.root / "missing-batches"
+        directory.mkdir()
+        (directory / "summary.json").write_text(
+            '{"success":true,"accounting_complete":true,'
+            '"inference":{"verified":true,"batches":1,'
+            '"valid_records":1,"predictions":1}}'
+        )
+        self.assertEqual(
+            self.client.get("/api/runs/missing-batches/predictions").status_code, 422
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
