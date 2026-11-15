@@ -68,7 +68,7 @@ def read_drift(root: Path, run_id: str) -> dict:
         windows = report.get("windows")
         if not isinstance(windows, list) or len(windows) > MAX_WINDOWS:
             raise ValueError("Malformed drift windows")
-        compact = _compact_windows(windows)
+        compact = _compact_windows(windows, require_ks=True)
         if sum(w["status"] == "evaluated" for w in compact) != report["evaluated_windows"]:
             raise ValueError("Drift evaluation count mismatch")
         summary_windows = _compact_windows(base["windows"])
@@ -79,7 +79,7 @@ def read_drift(root: Path, run_id: str) -> dict:
         raise HTTPException(status_code=422, detail="Invalid drift snapshot evidence") from exc
 
 
-def _compact_windows(windows):
+def _compact_windows(windows, *, require_ks=False):
     if not isinstance(windows, list) or len(windows) > MAX_WINDOWS:
         raise ValueError("Malformed drift windows")
     compact = []
@@ -109,7 +109,7 @@ def _compact_windows(windows):
             elif result is not None:
                 raise ValueError("Unevaluated window has KS results")
             item["ks_results"] = result
-        elif status == "evaluated":
+        elif status == "evaluated" and require_ks:
             raise ValueError("Evaluated window missing KS result")
         compact.append(item)
     return compact
