@@ -1,73 +1,39 @@
 # Drift-Aware Real-Time Intrusion Detection System
 
-## Purpose
+An academic research system for **bounded replay of recorded network-flow data**, binary intrusion-model inference, and opt-in Kolmogorov–Smirnov (KS) data-drift monitoring. It uses CIC-IDS2017 research data; it is **not live packet capture or production intrusion prevention**.
 
-This college research project plans a real-time intrusion detection system for
-network-flow records, using CIC-IDS2017 as its initial dataset. It combines
-stream processing and machine learning with a specific research focus on data
-drift.
+## Implemented architecture
 
-## Research objectives
+Capture-aware flow CSV → Python replay producer → Kafka → Spark Structured Streaming bounded consumer → existing **scikit-learn RandomForest** inference + optional KS drift monitoring → persisted JSON/JSONL run evidence → read-only FastAPI → React/TypeScript dashboard.
 
-1. Develop real-time intrusion detection using Apache Kafka, Apache Spark
-   Structured Streaming, and Spark MLlib.
-2. Evaluate model robustness against evasion attacks.
-3. Monitor data drift as the selected research twist.
+The Spark transport is implemented; the model is not Spark MLlib. No PostgreSQL-backed storage or live traffic ingestion is implemented.
 
-## Planned architecture
+## Components
 
-The planned flow is CIC-IDS2017 data → Python Kafka producer → Apache Kafka →
-Spark Structured Streaming → Spark MLlib intrusion detection → alert
-processing → FastAPI and PostgreSQL → React dashboard. Drift monitoring and
-evasion robustness evaluation are planned research modules. See
-[`docs/architecture.md`](docs/architecture.md) for details.
+- `src/preprocessing/`, `src/training/`: research dataset preparation and baseline model training.
+- `src/producer/`: bounded CSV-to-Kafka replay and transport validation.
+- `src/streaming/`: Spark bounded consumption, inference, opt-in drift monitoring, evidence verification.
+- `src/drift/`, `src/robustness/`: KS experiments, held-out and evasion/perturbation evaluation.
+- `backend/app/`: read-only FastAPI evidence endpoints (see [backend README](backend/README.md)).
+- `frontend/`: React/TypeScript/Vite evidence dashboard (see [frontend README](frontend/README.md)).
+- `data/`, `models/`: local data and model artifacts (not bundled in the repository).
+- `tests/`: Python unittest coverage, including opt-in live integration suites.
+- `docs/`: architecture, validation, progress, and acceptance evidence.
 
-## Technology stack
+## Local verification
 
-- Python 3.11
-- Apache Kafka
-- Apache Spark Structured Streaming and Spark MLlib
-- Pandas, NumPy, and SciPy
-- FastAPI and PostgreSQL
-- React and TypeScript
-- Docker and Docker Compose
-- Git and GitHub
+From the repository root with the project's Python 3.11 virtual environment activated:
 
-These are planned technologies, not installed or configured dependencies.
+```bash
+python -m unittest discover -s tests -v
+```
 
-## Project layout
+To build the dashboard, use Node 22 and run `npm run build` from `frontend/`. For local backend/frontend startup, see [frontend README](frontend/README.md). Running the full Kafka/Spark pipeline requires separately configured local dependencies and input data; the UI only reads saved results.
 
-- `data/`: raw and processed research data locations.
-- `notebooks/`: exploratory analysis and research notebooks.
-- `src/preprocessing/`, `src/training/`: planned data preparation and model
-  training.
-- `src/producer/`, `src/streaming/`: planned Kafka producer and Spark stream
-  components.
-- `src/drift/`, `src/robustness/`: planned drift monitoring and robustness
-  evaluation.
-- `src/common/`: planned shared project utilities.
-- `backend/`: planned FastAPI application, schemas, services, and database
-  layer.
-- `frontend/`: planned React and TypeScript dashboard.
-- `docker/`: reserved for future container configuration.
-- `models/`: location for generated model artifacts; none are included.
-- `tests/`: automated tests as functionality is implemented.
-- `configs/`: non-secret configuration and experiment settings.
-- `docs/`: architecture, setup, experiment, and progress documentation.
-- `scripts/`: future repeatable utilities and commands.
+## Increment 6 status
 
-## Current status
+User-executed acceptance: **250 Python tests, 248 passed, 2 skipped** (optional live Kafka/Spark tests), final frontend production build passed, and seven browser checks passed. See [closure audit](docs/increment6_closure_audit.md) and [progress](docs/progress.md).
 
-Offline preprocessing, scikit-learn Random Forest, held-out evaluation and KS
-experiments and controlled validators are implemented. The user reports the
-controlled CIC-IDS2017 gate passed at `6ba34e5`; see
-[attributed results and review](docs/controlled_real_validation.md). Phase 1 Kafka
-transport is merged through PR #2. The user reports 100/100 real-event replay
-and restart-persistence verification; see [Kafka transport](docs/kafka_transport.md).
-Kafka-to-Spark local acceptance code is implemented and awaits WSL validation;
-see [Spark streaming](docs/spark_streaming.md). ML inference, Spark drift processing,
-API, database, dashboard and evasion evaluation remain unimplemented.
+**Interpretation:** model predictions are not verified attacks; drift alerts are not attack confirmations. Held-out PortScan recall is poor despite high development-split accuracy. Do not infer operational reliability from the dashboard.
 
-See [drift validation](docs/drift_validation.md) for commands, actual results,
-limitations and file-by-file changes. Earlier "planned" descriptions above
-refer to the deployment architecture, not the existing offline experiments.
+Increment 7 reusable analysis is a separate, pending milestone. No merge into `master` is implied.
