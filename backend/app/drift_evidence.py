@@ -100,6 +100,16 @@ def _compact_windows(windows):
         if type(item["window_index"]) is not int or type(item["records"]) is not int:
             raise ValueError("Malformed drift window metadata")
         if "ks_results" in window:
-            item["ks_results"] = window["ks_results"]
+            result = window["ks_results"]
+            if status == "evaluated":
+                if not isinstance(result, dict) or type(result.get("alert")) is not bool:
+                    raise ValueError("Malformed KS result")
+                if result["alert"] is not alert or not isinstance(result.get("features"), dict):
+                    raise ValueError("KS result disagrees with window alert")
+            elif result is not None:
+                raise ValueError("Unevaluated window has KS results")
+            item["ks_results"] = result
+        elif status == "evaluated":
+            raise ValueError("Evaluated window missing KS result")
         compact.append(item)
     return compact
