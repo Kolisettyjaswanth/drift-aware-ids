@@ -212,6 +212,44 @@ class EvidenceApiTests(unittest.TestCase):
         path.write_text("not-json")
         self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
 
+    def test_drift_ks_alert_disagreement_rejected(self):
+        directory = self._drift_fixture()
+        path = directory / "drift" / "evaluations" / (("a" * 64) + ".json")
+        report = json.loads(path.read_text())
+        report["windows"][0]["ks_results"]["alert"] = False
+        path.write_text(json.dumps(report))
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
+
+    def test_drift_reference_mismatch_rejected(self):
+        directory = self._drift_fixture()
+        path = directory / "drift" / "evaluations" / (("a" * 64) + ".json")
+        report = json.loads(path.read_text())
+        report["reference"]["sha256"] = "c" * 64
+        path.write_text(json.dumps(report))
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
+
+    def test_drift_oversized_report_rejected(self):
+        directory = self._drift_fixture()
+        path = directory / "drift" / "evaluations" / (("a" * 64) + ".json")
+        path.write_text("x" * (8 * 1024 * 1024 + 1))
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
+
+    def test_drift_symlink_report_rejected(self):
+        directory = self._drift_fixture()
+        path = directory / "drift" / "evaluations" / (("a" * 64) + ".json")
+        target = directory / "original.json"
+        path.rename(target)
+        path.symlink_to(target)
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
+
+    def test_drift_window_metadata_mismatch_rejected(self):
+        directory = self._drift_fixture()
+        path = directory / "drift" / "evaluations" / (("a" * 64) + ".json")
+        report = json.loads(path.read_text())
+        report["windows"][0]["records"] = 999
+        path.write_text(json.dumps(report))
+        self.assertEqual(self.client.get("/api/runs/drift-case/drift").status_code, 422)
+
 
 if __name__ == "__main__":
     unittest.main()
