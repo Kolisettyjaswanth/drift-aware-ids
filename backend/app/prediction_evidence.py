@@ -62,3 +62,30 @@ def read_predictions(root: Path, run_id: str, offset: int, limit: int) -> dict:
         "run_id": run_id, "verified": True, "total": index,
         "offset": offset, "limit": limit, "predictions": selected,
     }
+
+
+def read_prediction_counts(root: Path, run_id: str) -> dict:
+    """Count every prediction from verified, bounded evidence, never a page sample."""
+    first = read_predictions(root, run_id, 0, 1)
+    directory = root / run_id / "predictions"
+    normal = attack = 0
+    try:
+        for path in sorted(directory.glob("batch-*.jsonl")):
+            with path.open("rb") as stream:
+                for line in stream:
+                    if len(line) > MAX_LINE_BYTES:
+                        raise ValueError("Oversized prediction line")
+                    record = json.loads(line)
+                    label = record.get("prediction")
+                    if type(label) is not int or label not in (0, 1):
+                        raise ValueError("Invalid prediction label")
+                    if label == 0:
+                        normal += 1
+                    else:
+                        attack += 1
+        if normal + attack != first["total"]:
+            raise ValueError("Prediction counts do not match verified total")
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid prediction count evidence") from exc
+    return {"run_id": run_id, "verified": True, "total": first["total"],
+            "predicted_normal": normal, "predicted_attack": attack}
