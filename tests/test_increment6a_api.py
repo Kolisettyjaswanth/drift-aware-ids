@@ -50,6 +50,41 @@ class EvidenceApiTests(unittest.TestCase):
         runs = self.client.get("/api/runs").json()["runs"]
         self.assertEqual([item["run_id"] for item in runs], ["actual"])
 
+    def test_run_detail_valid(self):
+        directory = self.root / "sample"
+        directory.mkdir()
+        (directory / "summary.json").write_text(
+            '{"success":true,"accounting_complete":true,"errors":[]}'
+        )
+        response = self.client.get("/api/runs/sample")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["accounting_complete"])
+        self.assertIsNone(response.json()["drift"])
+
+    def test_run_detail_rejects_traversal(self):
+        self.assertEqual(self.client.get("/api/runs/..").status_code, 404)
+        self.assertEqual(self.client.get("/api/runs/%2E%2E").status_code, 404)
+
+    def test_run_detail_rejects_malformed_summary(self):
+        directory = self.root / "bad"
+        directory.mkdir()
+        (directory / "summary.json").write_text('{"success": "yes"}')
+        self.assertEqual(self.client.get("/api/runs/bad").status_code, 422)
+
+    def test_run_detail_rejects_oversized_summary(self):
+        directory = self.root / "large"
+        directory.mkdir()
+        (directory / "summary.json").write_text("x" * (1024 * 1024 + 1))
+        self.assertEqual(self.client.get("/api/runs/large").status_code, 422)
+
+    def test_run_detail_rejects_symlink_summary(self):
+        directory = self.root / "linked-summary"
+        directory.mkdir()
+        target = self.root / "real.json"
+        target.write_text('{"success":true,"accounting_complete":true}')
+        (directory / "summary.json").symlink_to(target)
+        self.assertEqual(self.client.get("/api/runs/linked-summary").status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()
