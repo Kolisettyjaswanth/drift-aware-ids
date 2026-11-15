@@ -2,7 +2,6 @@
 
 This module does not create traffic or modify the fitted classifier.
 """
-import hashlib
 import json
 
 import numpy as np
@@ -47,7 +46,17 @@ def evaluate_perturbation(model, features, labels, feature_name, relative_streng
     positives = int((target == 1).sum())
     negatives = int((target == 0).sum())
     changed_rows = int((changed[feature_name].to_numpy() != numeric).sum())
+    transitions = {
+        "benign_0_to_1": int(((target == 0) & (clean == 0) & (altered == 1)).sum()),
+        "benign_1_to_0": int(((target == 0) & (clean == 1) & (altered == 0)).sum()),
+        "attack_0_to_1": int(((target == 1) & (clean == 0) & (altered == 1)).sum()),
+        "attack_1_to_0": int(((target == 1) & (clean == 1) & (altered == 0)).sum()),
+    }
+    flip_count = int((clean != altered).sum())
+    if sum(transitions.values()) != flip_count or transitions["attack_1_to_0"] != int(newly_missed.sum()):
+        raise AssertionError("Prediction transition accounting inconsistent")
     return {
+        "transitions": transitions,
         "feature": feature_name,
         "relative_strength": float(relative_strength),
         "rows": int(len(target)),
@@ -61,7 +70,7 @@ def evaluate_perturbation(model, features, labels, feature_name, relative_streng
         "originally_detected_attacks": count,
         "newly_missed_attacks": int(newly_missed.sum()),
         "conditional_evasion_rate": float(newly_missed.sum() / count) if count else None,
-        "prediction_flips": int((clean != altered).sum()),
+        "prediction_flips": flip_count,
         "limitations": "Synthetic independent tabular feature edit; not proven packet/flow feasible",
     }
 
