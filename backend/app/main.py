@@ -49,3 +49,8 @@ def get_predictions(
 ):
     from backend.app.prediction_evidence import read_predictions
     return read_predictions(evidence_root(), run_id, offset, limit)
+
+@app.get("/api/runs/{run_id}/drift")
+def get_drift(run_id: str):
+    from backend.app.drift_evidence import read_drift
+    return read_drift(evidence_root(), run_id)
