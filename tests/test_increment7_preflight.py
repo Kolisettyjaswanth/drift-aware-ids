@@ -78,6 +78,25 @@ class PreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manifest"):
             preflight(self.source, self.manifest)
 
+    def test_malformed_quoted_csv(self):
+        self.source.write_text('a,b,Label\n1,"unterminated,BENIGN\n')
+        with self.assertRaises(csv.Error):
+            preflight(self.source, self.manifest)
+
+    def test_width_mismatch(self):
+        self.write_csv(["a", "b", "Label"], [["1", "2", "BENIGN", "extra"]])
+        with self.assertRaisesRegex(ValueError, "width mismatch"):
+            preflight(self.source, self.manifest)
+
+    def test_missing_label_column(self):
+        self.write_csv(["a", "b"], [["1", "2"]])
+        with self.assertRaisesRegex(ValueError, "requires Label"):
+            preflight(self.source, self.manifest)
+
+    def test_blank_label_is_reported_as_compatible_not_ground_truth(self):
+        self.write_csv(["a", "b", "Label"], [["1", "2", ""]])
+        self.assertEqual(preflight(self.source, self.manifest)["valid_rows"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

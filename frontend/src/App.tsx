@@ -47,7 +47,7 @@ export default function App() {
   const [runsError, setRunsError] = useState("");
   useEffect(() => {
     const c = new AbortController();
-    getJson<{ runs: Run[] }>("/api/runs?limit=100", c.signal).then(v => { setRuns(v.runs); setRunsError(""); })
+    getJson<{ runs: Run[] }>("/api/runs?limit=100", c.signal).then(v => { if (!c.signal.aborted) { setRuns(v.runs); setRunsError(""); } })
       .catch(e => { if (!c.signal.aborted) setRunsError(errorText(e)); });
     return () => c.abort();
   }, [reload]);
@@ -59,11 +59,11 @@ export default function App() {
     Promise.all([
       getJson<RunDetail>(`/api/runs/${encodeURIComponent(runId)}`, c.signal),
       getJson<Drift>(`/api/runs/${encodeURIComponent(runId)}/drift`, c.signal)
-    ]).then(([a,b]) => { setDetail(a); setDrift(b); })
+    ]).then(([a,b]) => { if (!c.signal.aborted) { setDetail(a); setDrift(b); } })
       .catch(e => { if (!c.signal.aborted) setError(errorText(e)); })
       .finally(() => { if (!c.signal.aborted) setLoading(false); });
     return () => c.abort();
-  }, [runId]);
+  }, [runId, reload]);
   useEffect(() => {
     setPredictionError("");
     if (!runId || !detail?.success || !detail.accounting_complete || !detail.inference?.verified) { setPredictionLoading(false); return; }
@@ -80,9 +80,15 @@ export default function App() {
     if (!runId || !detail?.success || !detail.accounting_complete || !detail.inference?.verified) return;
     const controller = new AbortController();
     getJson<PredictionCounts>(`/api/runs/${encodeURIComponent(runId)}/prediction-counts`, controller.signal)
-      .then(setCounts).catch(e => { if (!controller.signal.aborted) setCountsError(errorText(e)); });
+      .then(v => { if (!controller.signal.aborted) setCounts(v); }).catch(e => { if (!controller.signal.aborted) setCountsError(errorText(e)); });
     return () => controller.abort();
   }, [runId, detail]);
+  const refresh = () => {
+    setDetail(null); setDrift(null); setPredictions(null); setCounts(null);
+    setError(""); setPredictionError(""); setCountsError("");
+    setLoading(Boolean(runId)); setOffset(0);
+    setReload(x => x+1);
+  };
   const query = search.trim().toLowerCase();
   const visible = runs.filter(r => query.startsWith("drift-") || /^20\d{6}t/.test(query) ? r.run_id.toLowerCase().includes(query) : `${nameOf(r.run_id)} ${r.run_id} ${dateOf(r.run_id)}`.toLowerCase().includes(query));
   const complete = detail?.success === true && detail.accounting_complete === true;
@@ -96,7 +102,7 @@ export default function App() {
     <main className="page">
       <header className="hero"><div><div className="eyebrow">YOUR SECURITY OVERVIEW</div><h1>Understand your network.</h1><p>Explore what the system observed in recorded network traffic, in plain language.</p></div><div className="hero-art" aria-hidden="true"><span>⌁</span></div></header>
       <div className="notice"><span className="notice-icon">ⓘ</span><div><strong>This is a research demonstration.</strong><p>These are saved test results, not live monitoring. A warning does not confirm a real-world cyberattack.</p></div></div>
-      <section className="panel"><div className="panel-heading"><div><span className="eyebrow">EXPLORE RESULTS</span><h2>Choose an analysis</h2><p>Pick a saved session to see what happened. Technical names are optional.</p></div><button className="refresh" onClick={() => setReload(x => x+1)}>↻ Refresh</button></div>
+      <section className="panel"><div className="panel-heading"><div><span className="eyebrow">EXPLORE RESULTS</span><h2>Choose an analysis</h2><p>Pick a saved session to see what happened. Technical names are optional.</p></div><button className="refresh" onClick={refresh}>↻ Refresh</button></div>
         <div className="search-row"><label className="searchbox"><span>⌕</span><span className="sr-only">Search saved analyses</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Find an analysis by name or date"/></label><span className="count">{visible.length} sessions</span></div>
         <div className="session-grid">{sessionList.map(r => <button key={r.run_id} aria-pressed={runId===r.run_id} className={`session ${runId===r.run_id?"selected":""}`} onClick={() => {setRunId(r.run_id);setOffset(0);setRecordsExpanded(false);}}><span className="session-mark">{r.run_id.startsWith("drift")?"⌁":"◫"}</span><span><strong>{sessionLabel(r)}</strong><small>{dateOf(r.run_id)}</small></span><span className="session-arrow">→</span></button>)}</div>
         {runsError && <p role="alert" className="error">Unable to load saved analyses: {runsError}</p>}

@@ -14,7 +14,8 @@ def prepare_drift_config(config):
     if result.get('enable_drift', False):
         if not result.get('drift_reference'):
             raise ValueError('--drift-reference is required with --enable-drift')
-        reference = load_reference(result['drift_reference'])
+        reference = load_reference(result['drift_reference'],
+                                   expected_sha256=result.get('drift_reference_sha256'))
         result['drift_reference'] = reference.provenance['path']
         result['drift_reference_sha256'] = reference.provenance['sha256']
     return result

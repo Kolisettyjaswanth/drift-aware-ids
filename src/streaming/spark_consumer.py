@@ -20,6 +20,12 @@ def write_json(path, value):
     temp.replace(path)
 
 
+def summary_path(config):
+    """Orchestrated Spark results are private until the runner finalizes."""
+    name = 'spark-summary.json' if config.get('orchestrated', False) else 'summary.json'
+    return Path(config['run_dir']) / name
+
+
 def merge_accounting(report, counts, *, partial=False):
     protected = {'errors', 'drift', 'inference', 'accounting_complete'}
     if partial:
@@ -234,7 +240,7 @@ def worker(config):
     report.update(replay_id=config['replay_id'], expected_count=config['expected_count'],
                   topic=config['topic'], connector=CONNECTOR,
                   counts_scope='completed batch files only; incomplete on runtime failure')
-    write_json(Path(config['run_dir'])/'summary.json', report)
+    write_json(summary_path(config), report)
     return 0 if report['success'] else 1
 
 
@@ -256,9 +262,18 @@ def terminate_group(process):
             pass
 
 
-def supervise(config, timeout):
+def supervise(config, timeout, *, reserved=False):
     run_dir = Path(config['run_dir'])
-    run_dir.mkdir(parents=True, exist_ok=False) # never reuse checkpoint or overwrite a run
+    if reserved:
+        # Only the bounded runner uses its exclusively reserved directory.
+        # Never permit Spark evidence/checkpoints to be reused through this path.
+        existing = ('config.json', 'spark-summary.json', 'checkpoint', 'batches', 'predictions')
+        if not config.get('orchestrated', False):
+            existing += ('summary.json',)
+        if not run_dir.is_dir() or any((run_dir / name).exists() for name in existing):
+            raise ValueError('Reserved run directory is unavailable or already used')
+    else:
+        run_dir.mkdir(parents=True, exist_ok=False)
     env = os.environ.copy()
     env['PYSPARK_SUBMIT_ARGS'] = '--driver-memory 1g pyspark-shell'
     env['PYSPARK_PYTHON'] = sys.executable
@@ -284,7 +299,7 @@ def supervise(config, timeout):
     finally:
         if process is not None:
             terminate_group(process)
-    path = run_dir/'summary.json'
+    path = summary_path(config)
     report = json.loads(path.read_text()) if path.exists() else {
         'success': False, 'accounting_complete': False, 'errors': []}
     if not path.exists():

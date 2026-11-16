@@ -7,10 +7,11 @@ from src.producer.events import csv_events, validate_event
 from src.streaming.validation import read_records, summarize
 
 
-def verify(run_dir, source):
+def verify(run_dir, source, *, summary=None):
     root = Path(run_dir)
     config = json.loads((root/'config.json').read_text())
-    summary = json.loads((root/'summary.json').read_text())
+    if summary is None:
+        summary = json.loads((root/'summary.json').read_text())
     if not summary['success'] or not summary['accounting_complete']:
         raise ValueError('Spark acceptance did not finish successfully')
     records = list(read_records(root)) # acceptance cap <=10000, not entire source CSV
