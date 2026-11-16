@@ -42,3 +42,6 @@ build/
 Thumbs.db
 *.tmp
 *.log
+
+# TypeScript incremental compiler cache
+*.tsbuildinfo
